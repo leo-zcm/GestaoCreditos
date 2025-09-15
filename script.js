@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // =================================================================================
     // SELETORES DE ELEMENTOS DO DOM
     // =================================================================================
+    // CORREÇÃO: Removidos seletores do módulo de relatórios que causavam o crash.
     const loginView = document.getElementById('login-view'),
           appView = document.getElementById('app-view'),
           loginForm = document.getElementById('login-form'),
@@ -130,12 +131,22 @@ document.addEventListener('DOMContentLoaded', () => {
     // =================================================================================
     function setupUIByPermissions() {
         const p = state.currentUser.permissions || {};
-        document.getElementById('nav-payments').style.display = (p.can_send_payments || p.can_edit_payments || p.can_confirm_payments || p.can_process_payments) ? 'block' : 'none';
-        document.getElementById('nav-credits').style.display = (p.can_use_credits || p.can_create_credits) ? 'block' : 'none';
-        document.getElementById('nav-users').style.display = p.can_manage_users ? 'block' : 'none';
-        document.getElementById('nav-requests').style.display = 'block';
-        document.getElementById('add-payment-btn').style.display = p.can_send_payments ? 'block' : 'none';
-        document.getElementById('add-credit-btn').style.display = p.can_create_credits ? 'block' : 'none';
+        
+        // CORREÇÃO: Função tornada mais robusta para evitar crashes
+        const checkAndSetDisplay = (id, condition) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.style.display = condition ? 'block' : 'none';
+            }
+        };
+
+        checkAndSetDisplay('nav-payments', p.can_send_payments || p.can_edit_payments || p.can_confirm_payments || p.can_process_payments);
+        checkAndSetDisplay('nav-credits', p.can_use_credits || p.can_create_credits);
+        checkAndSetDisplay('nav-users', p.can_manage_users);
+        checkAndSetDisplay('nav-requests', true); // Sempre visível para usuários logados
+        
+        checkAndSetDisplay('add-payment-btn', p.can_send_payments);
+        checkAndSetDisplay('add-credit-btn', p.can_create_credits);
     }
     
     navItems.forEach(item => {
@@ -407,15 +418,15 @@ document.addEventListener('DOMContentLoaded', () => {
         requestsTableBody.innerHTML = '<tr><td colspan="7">Carregando...</td></tr>';
         const { data, error } = await dbClient.from('credit_debit_requests').select('*, solicitante:profiles(full_name)').order('created_at', { ascending: false });
         if (error) {
-            console.error(error);
-            return requestsTableBody.innerHTML = '<tr><td colspan="7">Erro ao carregar solicitações.</td></tr>';
+            console.error("Erro ao carregar solicitações:", error);
+            return requestsTableBody.innerHTML = '<tr><td colspan="7">Erro ao carregar solicitações. Verifique o console.</td></tr>';
         }
         if (data.length === 0) return requestsTableBody.innerHTML = '<tr><td colspan="7">Nenhuma solicitação encontrada.</td></tr>';
         requestsTableBody.innerHTML = '';
         data.forEach(r => {
             const tr = document.createElement('tr');
             let actions = '';
-            if (r.status === 'Pendente' && state.currentUser.permissions.can_confirm_payments) { // Usando uma permissão existente como exemplo para aprovação
+            if (r.status === 'Pendente' && state.currentUser.permissions.can_confirm_payments) {
                 actions = `<button class="btn btn-success btn-approve-request" data-id="${r.id}">Aprovar</button><button class="btn btn-danger btn-reject-request" data-id="${r.id}">Rejeitar</button>`;
             }
             tr.innerHTML = `<td>${r.id}</td><td>${r.debit_client_name}</td><td>${r.credit_client_name}</td><td>R$ ${Number(r.value).toFixed(2)}</td><td>${r.status}</td><td>${r.solicitante?.full_name || 'N/A'}</td><td class="action-buttons">${actions}</td>`;
