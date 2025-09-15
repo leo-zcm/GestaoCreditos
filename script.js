@@ -6,7 +6,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = 'https://vahbjeewkjqwcxgdrtnf.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhaGJqZWV3a2pxd2N4Z2RydG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NjMzNDUsImV4cCI6MjA3MzUzOTM0NX0.XHnOh4qB3yNTWOL5JhhJnV5va4Q4bKGhqQ7gv-czdRQ';
 
-    // Correção: A biblioteca Supabase v2 usa a sintaxe 'supabase.createClient'
+    // Verificação para garantir que as chaves foram inseridas
+    if (SUPABASE_URL === 'SUA_URL_DO_PROJETO_SUPABASE' || SUPABASE_ANON_KEY === 'SUA_CHAVE_ANON_PUBLICA') {
+        alert('ERRO: Por favor, insira suas credenciais do Supabase no arquivo script.js para que a aplicação possa funcionar.');
+    }
+
     const { createClient } = supabase;
     const dbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -48,36 +52,62 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCloseBtn = document.querySelector('.modal-close');
 
     // =================================================================================
-    // LÓGICA DE AUTENTICAÇÃO E INICIALIZAÇÃO
+    // LÓGICA DE AUTENTICAÇÃO E INICIALIZAÇÃO (ATUALIZADA)
     // =================================================================================
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginError.textContent = '';
-        const email = document.getElementById('username').value;
+        // Alterado para 'login-input' para corresponder ao HTML
+        const loginInput = document.getElementById('login-input').value;
         const password = document.getElementById('password').value;
 
-        const { data: { user }, error } = await dbClient.auth.signInWithPassword({ email, password });
+        let userEmail = loginInput;
 
-        if (error) {
-            loginError.textContent = 'E-mail ou senha inválidos.';
+        // Verifica se o input parece ser um nome de usuário (não contém '@')
+        if (!loginInput.includes('@')) {
+            // Se for um nome de usuário, busca o e-mail correspondente na tabela de perfis
+            const { data: profile, error: profileError } = await dbClient
+                .from('profiles')
+                .select('email') // Seleciona apenas a coluna de e-mail
+                .eq('username', loginInput) // Onde o username corresponde ao input
+                .single(); // Espera encontrar apenas um resultado
+
+            if (profileError || !profile) {
+                loginError.textContent = 'Usuário ou senha inválidos.';
+                console.error('Usuário não encontrado:', loginInput);
+                return;
+            }
+
+            // Se encontrou, usa o e-mail do perfil para o login
+            userEmail = profile.email;
+        }
+
+        // Agora, tenta fazer o login com o e-mail (seja o digitado ou o encontrado)
+        const { data: { user }, error: authError } = await dbClient.auth.signInWithPassword({
+            email: userEmail,
+            password: password
+        });
+
+        if (authError) {
+            loginError.textContent = 'Usuário ou senha inválidos.';
             return;
         }
 
         if (user) {
-            // Após o login, busca o perfil completo na tabela 'profiles'
-            const { data: profile, error: profileError } = await dbClient
+            // Após o login bem-sucedido, busca o perfil completo para obter as permissões
+            const { data: profile, error: fetchProfileError } = await dbClient
                 .from('profiles')
                 .select('*')
                 .eq('id', user.id)
-                .single(); // .single() espera um único resultado
+                .single();
             
-            if (profileError || !profile) {
+            if (fetchProfileError || !profile) {
                 loginError.textContent = 'Não foi possível carregar o perfil do usuário.';
                 await dbClient.auth.signOut();
                 return;
             }
             
-            state.currentUser = profile; // Armazena o perfil com as permissões
+            state.currentUser = profile;
             initializeApp();
         }
     });
@@ -86,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
         await dbClient.auth.signOut();
         state.currentUser = null;
         loginError.textContent = '';
-        document.getElementById('username').value = '';
+        // Alterado para 'login-input' para limpar o campo correto
+        document.getElementById('login-input').value = '';
         document.getElementById('password').value = '';
         appView.classList.add('hidden');
         loginView.classList.remove('hidden');
@@ -163,7 +194,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         promises.push(dbClient.from('credits').select('id', { count: 'exact', head: true }).eq('status', 'Disponível').eq('consultor_id', state.currentUser.id));
 
-        // Executa todas as contagens em paralelo para melhor performance
         const results = await Promise.all(promises);
         let cardsHtml = '';
         
@@ -195,7 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderPaymentsTable() {
         paymentsTableBody.innerHTML = '<tr><td colspan="7">Carregando comprovantes...</td></tr>';
         
-        // A sintaxe 'tabela_fk(colunas)' realiza um JOIN
         let query = dbClient.from('payments').select(`*, payment_types(name, color_theme)`);
         
         const statusFilter = document.getElementById('payment-status-filter').value;
@@ -272,12 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const start = (currentPage - 1) * itemsPerPage;
         const end = start + itemsPerPage - 1;
 
-        // 'count: exact' é crucial para a paginação funcionar
         let query = dbClient.from('credits').select('*', { count: 'exact' });
 
         const searchTerm = document.getElementById('credit-client-search').value;
         if (searchTerm) {
-            // .or() busca em múltiplas colunas. '.ilike' é case-insensitive
             query = query.or(`client_name.ilike.%${searchTerm}%,client_code.ilike.%${searchTerm}%`);
         }
         
