@@ -3,8 +3,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // =================================================================================
     // 1. CONFIGURAÇÃO DO SUPABASE (INSIRA SUAS CHAVES AQUI)
     // =================================================================================
-    const SUPABASE_URL = CHAVE_SUPABASE_URL;
-    const SUPABASE_ANON_KEY = CHAVE_SUPABASE_ANON_KEY;
+    const SUPABASE_URL = 'https://vahbjeewkjqwcxgdrtnf.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhaGJqZWV3a2pxd2N4Z2RydG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NjMzNDUsImV4cCI6MjA3MzUzOTM0NX0.XHnOh4qB3yNTWOL5JhhJnV5va4Q4bKGhqQ7gv-czdRQ';
 
     // Correção: A biblioteca Supabase v2 usa a sintaxe 'supabase.createClient'
     const { createClient } = supabase;
