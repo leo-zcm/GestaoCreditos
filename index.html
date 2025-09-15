@@ -45,7 +45,6 @@
                     <li class="nav-item" data-view="payments" id="nav-payments"><a href="#">Comprovantes</a></li>
                     <li class="nav-item" data-view="credits" id="nav-credits"><a href="#">Créditos</a></li>
                     <li class="nav-item" data-view="requests" id="nav-requests"><a href="#">Solicitações D/C</a></li>
-                    <li class="nav-item" data-view="reports" id="nav-reports"><a href="#">Relatórios</a></li>
                     <li class="nav-item" data-view="users" id="nav-users"><a href="#">Usuários</a></li>
                 </ul>
             </nav>
@@ -57,7 +56,10 @@
                 </div>
 
                 <div id="payments-view" class="view">
-                    <h2>Gestão de Comprovantes</h2>
+                    <div class="view-header">
+                        <h2>Gestão de Comprovantes</h2>
+                        <button id="add-payment-btn" class="btn btn-primary">Novo Comprovante</button>
+                    </div>
                     <div class="filters">
                         <select id="payment-status-filter"><option value="">Todos</option><option value="Aguardando Confirmação">Aguardando Confirmação</option><option value="Confirmado">Confirmado</option><option value="Faturado">Faturado</option><option value="Faturado Parcialmente">Faturado Parcialmente</option><option value="Convertido em Crédito">Convertido em Crédito</option></select>
                         <input type="date" id="payment-date-filter">
@@ -67,7 +69,10 @@
                 </div>
 
                 <div id="credits-view" class="view">
-                    <h2>Controle de Créditos</h2>
+                    <div class="view-header">
+                        <h2>Controle de Créditos</h2>
+                        <button id="add-credit-btn" class="btn btn-primary">Novo Crédito Manual</button>
+                    </div>
                     <div class="search-area">
                          <div class="form-group"><label for="credit-client-search">Buscar por Cliente (Nome ou Código)</label><input type="text" id="credit-client-search" placeholder="Digite o nome ou código..."></div>
                          <div class="form-group"><label for="credit-consultor-select">ou Selecione um Consultor</label><select id="credit-consultor-select"><option value="">Selecione...</option></select></div>
@@ -78,22 +83,11 @@
                 </div>
                 
                 <div id="requests-view" class="view">
-                    <h2>Solicitações de Débito e Crédito</h2>
-                    <button id="add-request-btn" class="btn btn-primary">Nova Solicitação</button>
-                    <div class="table-container"><table id="requests-table"><thead><tr><th>ID</th><th>Cliente Débito</th><th>Cliente Crédito</th><th>Valor</th><th>Status</th><th>Solicitante</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
-                </div>
-
-                <div id="reports-view" class="view">
-                    <h2>Relatórios</h2>
-                    <div class="search-area">
-                        <p>Selecione o período para extrair os dados em formato CSV.</p>
-                        <div class="form-group"><label for="report-start-date">Data de Início</label><input type="date" id="report-start-date"></div>
-                        <div class="form-group"><label for="report-end-date">Data de Fim</label><input type="date" id="report-end-date"></div>
-                        <div class="action-buttons">
-                            <button id="export-payments-csv" class="btn btn-success">Exportar Comprovantes (CSV)</button>
-                            <button id="export-credits-csv" class="btn btn-success">Exportar Créditos (CSV)</button>
-                        </div>
+                    <div class="view-header">
+                        <h2>Solicitações de Débito e Crédito</h2>
+                        <button id="add-request-btn" class="btn btn-primary">Nova Solicitação</button>
                     </div>
+                    <div class="table-container"><table id="requests-table"><thead><tr><th>ID</th><th>Cliente Débito</th><th>Cliente Crédito</th><th>Valor</th><th>Status</th><th>Solicitante</th><th>Ações</th></tr></thead><tbody></tbody></table></div>
                 </div>
 
                 <div id="users-view" class="view">
