@@ -6,11 +6,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = 'https://vahbjeewkjqwcxgdrtnf.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhaGJqZWV3a2pxd2N4Z2RydG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NjMzNDUsImV4cCI6MjA3MzUzOTM0NX0.XHnOh4qB3yNTWOL5JhhJnV5va4Q4bKGhqQ7gv-czdRQ';
 
-    // Verificação para garantir que as chaves foram inseridas
-    if (SUPABASE_URL === 'SUA_URL_DO_PROJETO_SUPABASE' || SUPABASE_ANON_KEY === 'SUA_CHAVE_ANON_PUBLICA') {
-        alert('ERRO: Por favor, insira suas credenciais do Supabase no arquivo script.js para que a aplicação possa funcionar.');
-    }
-
     const { createClient } = supabase;
     const dbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -52,37 +47,33 @@ document.addEventListener('DOMContentLoaded', () => {
     const modalCloseBtn = document.querySelector('.modal-close');
 
     // =================================================================================
-    // LÓGICA DE AUTENTICAÇÃO E INICIALIZAÇÃO (ATUALIZADA)
+    // LÓGICA DE AUTENTICAÇÃO E INICIALIZAÇÃO (CORRETA)
     // =================================================================================
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginError.textContent = '';
-        // Alterado para 'login-input' para corresponder ao HTML
         const loginInput = document.getElementById('login-input').value;
         const password = document.getElementById('password').value;
 
         let userEmail = loginInput;
 
-        // Verifica se o input parece ser um nome de usuário (não contém '@')
+        // Se o input não for um email, assume que é um username e busca o email correspondente
         if (!loginInput.includes('@')) {
-            // Se for um nome de usuário, busca o e-mail correspondente na tabela de perfis
             const { data: profile, error: profileError } = await dbClient
                 .from('profiles')
-                .select('email') // Seleciona apenas a coluna de e-mail
-                .eq('username', loginInput) // Onde o username corresponde ao input
-                .single(); // Espera encontrar apenas um resultado
+                .select('email')
+                .eq('username', loginInput)
+                .single();
 
             if (profileError || !profile) {
                 loginError.textContent = 'Usuário ou senha inválidos.';
-                console.error('Usuário não encontrado:', loginInput);
+                console.error('Erro ao buscar perfil por username:', profileError?.message);
                 return;
             }
-
-            // Se encontrou, usa o e-mail do perfil para o login
             userEmail = profile.email;
         }
 
-        // Agora, tenta fazer o login com o e-mail (seja o digitado ou o encontrado)
+        // Procede com o login usando o email (seja o digitado ou o encontrado)
         const { data: { user }, error: authError } = await dbClient.auth.signInWithPassword({
             email: userEmail,
             password: password
@@ -94,7 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (user) {
-            // Após o login bem-sucedido, busca o perfil completo para obter as permissões
+            // Após o login, busca o perfil completo para obter as permissões
             const { data: profile, error: fetchProfileError } = await dbClient
                 .from('profiles')
                 .select('*')
@@ -116,7 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
         await dbClient.auth.signOut();
         state.currentUser = null;
         loginError.textContent = '';
-        // Alterado para 'login-input' para limpar o campo correto
         document.getElementById('login-input').value = '';
         document.getElementById('password').value = '';
         appView.classList.add('hidden');
@@ -138,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // NAVEGAÇÃO E CONTROLE DE UI
     // =================================================================================
     function setupUIByPermissions() {
-        const permissions = state.currentUser.permissions || {}; // Garante que permissions não seja nulo
+        const permissions = state.currentUser.permissions || {};
         document.getElementById('nav-payments').style.display = (permissions.can_send_payments || permissions.can_edit_payments || permissions.can_confirm_payments || permissions.can_process_payments) ? 'block' : 'none';
         document.getElementById('nav-credits').style.display = (permissions.can_use_credits || permissions.can_create_credits) ? 'block' : 'none';
         document.getElementById('nav-users').style.display = permissions.can_manage_users ? 'block' : 'none';
