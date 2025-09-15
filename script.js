@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // =================================================================================
-    // 1. CONFIGURAÇÃO DO SUPABASE (INSIRA SUAS CHAVES AQUI)
+    // 1. CONFIGURAÇÃO DO SUPABASE
     // =================================================================================
     const SUPABASE_URL = 'https://vahbjeewkjqwcxgdrtnf.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZhaGJqZWV3a2pxd2N4Z2RydG5mIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc5NjMzNDUsImV4cCI6MjA3MzUzOTM0NX0.XHnOh4qB3yNTWOL5JhhJnV5va4Q4bKGhqQ7gv-czdRQ';
@@ -16,7 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
         currentUser: null,
         activeView: 'login',
         credits: { currentPage: 1, itemsPerPage: 50 },
-        allUsers: [], // Cache para preencher selects
+        allUsers: [],
+        paymentTypes: [],
     };
 
     // =================================================================================
@@ -33,13 +34,13 @@ document.addEventListener('DOMContentLoaded', () => {
           dashboardCardsContainer = document.getElementById('dashboard-cards-container'),
           paymentsTableBody = document.querySelector('#payments-table tbody'),
           filterPaymentsBtn = document.getElementById('filter-payments-btn'),
+          addPaymentBtn = document.getElementById('add-payment-btn'),
           creditsTableBody = document.querySelector('#credits-table tbody'),
           searchCreditsBtn = document.getElementById('search-credits-btn'),
+          addCreditBtn = document.getElementById('add-credit-btn'),
           creditsPagination = document.getElementById('credits-pagination'),
           requestsTableBody = document.querySelector('#requests-table tbody'),
           addRequestBtn = document.getElementById('add-request-btn'),
-          exportPaymentsCsvBtn = document.getElementById('export-payments-csv'),
-          exportCreditsCsvBtn = document.getElementById('export-credits-csv'),
           usersTableBody = document.querySelector('#users-table tbody'),
           modalContainer = document.getElementById('modal-container'),
           modalTitle = document.getElementById('modal-title'),
@@ -67,16 +68,17 @@ document.addEventListener('DOMContentLoaded', () => {
             userEmail = profile.email;
         }
 
-        const { data: { user }, error: authError } = await dbClient.auth.signInWithPassword({ email: userEmail, password });
+        const { data: { user }, error: authError } = await dbClient.auth.signInWithPassword({ email: userEmail, password: password });
         if (authError) {
             loginError.textContent = 'Usuário ou senha inválidos.';
             return;
         }
 
         if (user) {
-            const { data: profile, error } = await dbClient.from('profiles').select('*').eq('id', user.id).single();
-            if (error || !profile) {
+            const { data: profile, error: fetchProfileError } = await dbClient.from('profiles').select('*').eq('id', user.id).single();
+            if (fetchProfileError || !profile) {
                 loginError.textContent = 'Não foi possível carregar o perfil do usuário.';
+                console.error("Erro ao buscar perfil após login:", fetchProfileError);
                 await dbClient.auth.signOut();
                 return;
             }
@@ -105,14 +107,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     async function fetchInitialData() {
-        const { data, error } = await dbClient.from('profiles').select('id, full_name');
-        if (!error) {
-            state.allUsers = data;
+        const [usersRes, typesRes] = await Promise.all([
+            dbClient.from('profiles').select('id, full_name'),
+            dbClient.from('payment_types').select('*')
+        ]);
+
+        if (!usersRes.error) {
+            state.allUsers = usersRes.data;
             const consultorSelect = document.getElementById('credit-consultor-select');
             consultorSelect.innerHTML = '<option value="">Selecione...</option>';
-            data.forEach(user => {
+            usersRes.data.forEach(user => {
                 consultorSelect.innerHTML += `<option value="${user.id}">${user.full_name}</option>`;
             });
+        }
+        if (!typesRes.error) {
+            state.paymentTypes = typesRes.data;
         }
     }
 
@@ -125,7 +134,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('nav-credits').style.display = (p.can_use_credits || p.can_create_credits) ? 'block' : 'none';
         document.getElementById('nav-users').style.display = p.can_manage_users ? 'block' : 'none';
         document.getElementById('nav-requests').style.display = 'block';
-        document.getElementById('nav-reports').style.display = 'block';
+        document.getElementById('add-payment-btn').style.display = p.can_send_payments ? 'block' : 'none';
+        document.getElementById('add-credit-btn').style.display = p.can_create_credits ? 'block' : 'none';
     }
     
     navItems.forEach(item => {
@@ -153,7 +163,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 creditsPagination.innerHTML = '';
                 break;
             case 'requests': renderRequestsTable(); break;
-            case 'reports': break;
             case 'users': renderUsersTable(); break;
         }
     }
@@ -182,6 +191,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // LÓGICA DE COMPROVANTES (PAYMENTS)
     // =================================================================================
     filterPaymentsBtn.addEventListener('click', renderPaymentsTable);
+    addPaymentBtn.addEventListener('click', handleNewPaymentClick);
+
     async function renderPaymentsTable() {
         paymentsTableBody.innerHTML = '<tr><td colspan="7">Carregando...</td></tr>';
         let query = dbClient.from('payments').select(`*, payment_types(name, color_theme)`);
@@ -212,14 +223,76 @@ document.addEventListener('DOMContentLoaded', () => {
         return buttons || 'N/A';
     }
     function addPaymentActionListeners() {
+        document.querySelectorAll('.btn-edit-payment').forEach(btn => btn.addEventListener('click', handleEditPaymentClick));
         document.querySelectorAll('.btn-faturar-payment').forEach(btn => btn.addEventListener('click', handleFaturarClick));
         document.querySelectorAll('.btn-convert-credit').forEach(btn => btn.addEventListener('click', handleConvertToCreditClick));
+    }
+    
+    function handleNewPaymentClick() {
+        let typeOptions = state.paymentTypes.map(type => `<option value="${type.id}">${type.name}</option>`).join('');
+        const bodyHtml = `<div class="form-group"><label>Nome do Cliente</label><input id="new-payment-client" type="text"></div><div class="form-group"><label>Valor</label><input id="new-payment-value" type="number" step="0.01"></div><div class="form-group"><label>Tipo de Pagamento</label><select id="new-payment-type">${typeOptions}</select></div>`;
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Salvar Comprovante', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
+            const newPayment = {
+                client_name: document.getElementById('new-payment-client').value,
+                value: parseFloat(document.getElementById('new-payment-value').value),
+                payment_type_id: document.getElementById('new-payment-type').value,
+                status: 'Aguardando Confirmação',
+                created_by_user_id: state.currentUser.id
+            };
+            if (!newPayment.client_name || !newPayment.value) {
+                alert('Preencha todos os campos.');
+                button.disabled = false; button.textContent = 'Salvar Comprovante';
+                return;
+            }
+            const { error } = await dbClient.from('payments').insert([newPayment]);
+            if (error) {
+                alert('Erro ao salvar: ' + error.message);
+                button.disabled = false; button.textContent = 'Salvar Comprovante';
+            } else {
+                alert('Comprovante salvo com sucesso!');
+                closeModal();
+                renderPaymentsTable();
+            }
+        }}];
+        openModal('Novo Comprovante de Pagamento', bodyHtml, footerButtons);
+    }
+    
+    async function handleEditPaymentClick(e) {
+        const paymentId = e.target.dataset.id;
+        const { data: payment, error } = await dbClient.from('payments').select('*').eq('id', paymentId).single();
+        if (error) return alert('Erro ao carregar dados do pagamento.');
+
+        const bodyHtml = `<div class="form-group"><label>Nome do Cliente</label><input id="edit-payment-client" type="text" value="${payment.client_name}"></div><div class="form-group"><label>Valor</label><input id="edit-payment-value" type="number" step="0.01" value="${payment.value}"></div>`;
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Salvar Alterações', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
+            const updatedPayment = {
+                client_name: document.getElementById('edit-payment-client').value,
+                value: parseFloat(document.getElementById('edit-payment-value').value),
+                last_modified_at: new Date(),
+                last_modified_by_user_id: state.currentUser.id
+            };
+            const { error } = await dbClient.from('payments').update(updatedPayment).eq('id', paymentId);
+            if (error) {
+                alert('Erro ao salvar: ' + error.message);
+                button.disabled = false; button.textContent = 'Salvar Alterações';
+            } else {
+                alert('Comprovante atualizado com sucesso!');
+                closeModal();
+                renderPaymentsTable();
+            }
+        }}];
+        openModal(`Editar Comprovante #${payment.id}`, bodyHtml, footerButtons);
     }
 
     // =================================================================================
     // LÓGICA DE CRÉDITOS
     // =================================================================================
     searchCreditsBtn.addEventListener('click', () => { state.credits.currentPage = 1; renderCreditsTable(); });
+    addCreditBtn.addEventListener('click', handleNewCreditClick);
+
     async function renderCreditsTable() {
         creditsTableBody.innerHTML = '<tr><td colspan="7">Buscando...</td></tr>';
         const { currentPage, itemsPerPage } = state.credits;
@@ -251,6 +324,40 @@ document.addEventListener('DOMContentLoaded', () => {
         nextBtn.addEventListener('click', () => { state.credits.currentPage++; renderCreditsTable(); });
         creditsPagination.append(prevBtn, pageInfo, nextBtn);
     }
+    
+    function handleNewCreditClick() {
+        let consultorOptions = state.allUsers.map(user => `<option value="${user.id}">${user.full_name}</option>`).join('');
+        const bodyHtml = `<div class="form-group"><label>Nome do Cliente</label><input id="new-credit-client" type="text"></div><div class="form-group"><label>Código do Cliente</label><input id="new-credit-code" type="text"></div><div class="form-group"><label>Descrição/Origem</label><input id="new-credit-desc" type="text"></div><div class="form-group"><label>Valor</label><input id="new-credit-value" type="number" step="0.01"></div><div class="form-group"><label>Consultor Responsável</label><select id="new-credit-consultor">${consultorOptions}</select></div>`;
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Salvar Crédito', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
+            const newCredit = {
+                client_name: document.getElementById('new-credit-client').value,
+                client_code: document.getElementById('new-credit-code').value,
+                description: document.getElementById('new-credit-desc').value,
+                original_value: parseFloat(document.getElementById('new-credit-value').value),
+                current_value: parseFloat(document.getElementById('new-credit-value').value),
+                consultor_id: document.getElementById('new-credit-consultor').value,
+                status: 'Disponível',
+                created_by_user_id: state.currentUser.id
+            };
+            if (!newCredit.client_name || !newCredit.original_value || !newCredit.description) {
+                alert('Preencha os campos obrigatórios.');
+                button.disabled = false; button.textContent = 'Salvar Crédito';
+                return;
+            }
+            const { error } = await dbClient.from('credits').insert([newCredit]);
+            if (error) {
+                alert('Erro ao salvar: ' + error.message);
+                button.disabled = false; button.textContent = 'Salvar Crédito';
+            } else {
+                alert('Crédito salvo com sucesso!');
+                closeModal();
+                if (state.activeView === 'credits') renderCreditsTable();
+            }
+        }}];
+        openModal('Novo Crédito Manual', bodyHtml, footerButtons);
+    }
 
     // =================================================================================
     // LÓGICA DE GESTÃO DE USUÁRIOS
@@ -275,13 +382,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const allP = ['can_send_payments', 'can_edit_payments', 'can_confirm_payments', 'can_process_payments', 'can_convert_payment_to_credit', 'can_use_credits', 'can_create_credits', 'can_manage_users'];
         let permissionsHtml = allP.map(perm => `<div class="permission-item"><input type="checkbox" id="perm_${perm}" name="${perm}" ${p[perm] ? 'checked' : ''}><label for="perm_${perm}">${perm.replace(/_/g, ' ')}</label></div>`).join('');
         const bodyHtml = `<div class="form-group"><label for="user-fullname">Nome Completo</label><input type="text" id="user-fullname" value="${user.full_name || ''}"></div><div class="form-group"><label for="user-username">Usuário (MAIÚSCULAS)</label><input type="text" id="user-username" value="${user.username || ''}"></div><div class="form-group"><label for="user-email">Email</label><input type="email" id="user-email" value="${user.email || ''}" disabled></div><h4>Permissões</h4><div class="permissions-grid">${permissionsHtml}</div>`;
-        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Salvar Alterações', className: 'btn btn-primary', handler: async () => {
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Salvar Alterações', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
             const newPermissions = {};
             allP.forEach(perm => { newPermissions[perm] = document.getElementById(`perm_${perm}`).checked; });
             const updatedProfile = { full_name: document.getElementById('user-fullname').value, username: document.getElementById('user-username').value.toUpperCase(), permissions: newPermissions };
             const { error } = await dbClient.from('profiles').update(updatedProfile).eq('id', userId);
-            if (error) alert('Erro ao salvar: ' + error.message);
-            else { alert('Usuário atualizado!'); closeModal(); renderUsersTable(); }
+            if (error) {
+                alert('Erro ao salvar: ' + error.message);
+                button.disabled = false; button.textContent = 'Salvar Alterações';
+            } else { 
+                alert('Usuário atualizado!'); closeModal(); renderUsersTable(); 
+            }
         }}];
         openModal(`Editar Usuário: ${user.full_name}`, bodyHtml, footerButtons);
     }
@@ -293,13 +406,16 @@ document.addEventListener('DOMContentLoaded', () => {
     async function renderRequestsTable() {
         requestsTableBody.innerHTML = '<tr><td colspan="7">Carregando...</td></tr>';
         const { data, error } = await dbClient.from('credit_debit_requests').select('*, solicitante:profiles(full_name)').order('created_at', { ascending: false });
-        if (error) return requestsTableBody.innerHTML = '<tr><td colspan="7">Erro ao carregar.</td></tr>';
+        if (error) {
+            console.error(error);
+            return requestsTableBody.innerHTML = '<tr><td colspan="7">Erro ao carregar solicitações.</td></tr>';
+        }
         if (data.length === 0) return requestsTableBody.innerHTML = '<tr><td colspan="7">Nenhuma solicitação encontrada.</td></tr>';
         requestsTableBody.innerHTML = '';
         data.forEach(r => {
             const tr = document.createElement('tr');
             let actions = '';
-            if (r.status === 'Pendente' && state.currentUser.permissions.can_confirm_payments) {
+            if (r.status === 'Pendente' && state.currentUser.permissions.can_confirm_payments) { // Usando uma permissão existente como exemplo para aprovação
                 actions = `<button class="btn btn-success btn-approve-request" data-id="${r.id}">Aprovar</button><button class="btn btn-danger btn-reject-request" data-id="${r.id}">Rejeitar</button>`;
             }
             tr.innerHTML = `<td>${r.id}</td><td>${r.debit_client_name}</td><td>${r.credit_client_name}</td><td>R$ ${Number(r.value).toFixed(2)}</td><td>${r.status}</td><td>${r.solicitante?.full_name || 'N/A'}</td><td class="action-buttons">${actions}</td>`;
@@ -331,7 +447,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function handleNewRequestClick() {
         const bodyHtml = `<div class="form-group"><label>Cliente (Débito)</label><input id="req-debit-client" type="text"></div><div class="form-group"><label>Cliente (Crédito)</label><input id="req-credit-client" type="text"></div><div class="form-group"><label>Código Cliente (Crédito)</label><input id="req-credit-code" type="text"></div><div class="form-group"><label>Detalhes do Produto</label><input id="req-product" type="text"></div><div class="form-group"><label>Valor</label><input id="req-value" type="number" step="0.01"></div><div class="form-group"><label>Observações</label><input id="req-notes" type="text"></div>`;
-        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Criar Solicitação', className: 'btn btn-primary', handler: async () => {
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Criar Solicitação', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Criando...';
             const newReq = {
                 debit_client_name: document.getElementById('req-debit-client').value,
                 credit_client_name: document.getElementById('req-credit-client').value,
@@ -342,50 +460,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 status: 'Pendente',
                 created_by_consultor_id: state.currentUser.id
             };
-            if(!newReq.debit_client_name || !newReq.credit_client_name || !newReq.value) return alert('Preencha os campos obrigatórios.');
+            if(!newReq.debit_client_name || !newReq.credit_client_name || !newReq.value) {
+                alert('Preencha os campos obrigatórios.');
+                button.disabled = false; button.textContent = 'Criar Solicitação';
+                return;
+            }
             const { error } = await dbClient.from('credit_debit_requests').insert([newReq]);
-            if(error) return alert('Erro ao criar solicitação: ' + error.message);
-            alert('Solicitação criada com sucesso!');
-            closeModal();
-            renderRequestsTable();
+            if(error) {
+                alert('Erro ao criar solicitação: ' + error.message);
+                button.disabled = false; button.textContent = 'Criar Solicitação';
+            } else {
+                alert('Solicitação criada com sucesso!');
+                closeModal();
+                renderRequestsTable();
+            }
         }}];
         openModal('Nova Solicitação de D/C', bodyHtml, footerButtons);
-    }
-    
-    // =================================================================================
-    // LÓGICA DE RELATÓRIOS
-    // =================================================================================
-    exportPaymentsCsvBtn.addEventListener('click', () => handleExportCsv('payments', 'relatorio_comprovantes.csv'));
-    exportCreditsCsvBtn.addEventListener('click', () => handleExportCsv('credits', 'relatorio_creditos.csv'));
-    async function handleExportCsv(tableName, filename) {
-        const startDate = document.getElementById('report-start-date').value;
-        const endDate = document.getElementById('report-end-date').value;
-        if (!startDate || !endDate) return alert('Por favor, selecione data de início e fim.');
-        const { data, error } = await dbClient.from(tableName).select('*').gte('created_at', startDate).lte('created_at', `${endDate}T23:59:59`);
-        if (error) return alert('Erro ao buscar dados: ' + error.message);
-        if (data.length === 0) return alert('Nenhum dado encontrado para o período.');
-        exportToCsv(filename, data);
-    }
-    function exportToCsv(filename, rows) {
-        if (!rows || !rows.length) return;
-        const separator = ',';
-        const keys = Object.keys(rows[0]);
-        const csvContent = keys.join(separator) + '\n' + rows.map(row => {
-            return keys.map(k => {
-                let cell = row[k] === null || row[k] === undefined ? '' : row[k];
-                cell = typeof cell === 'object' ? JSON.stringify(cell).replace(/"/g, '""') : String(cell).replace(/"/g, '""');
-                return `"${cell}"`;
-            }).join(separator);
-        }).join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', filename);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     }
     
     // =================================================================================
@@ -412,20 +502,30 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data: payment, error } = await dbClient.from('payments').select('*').eq('id', paymentId).single();
         if (error || !payment) return alert('Erro ao carregar dados do pagamento.');
         const bodyHtml = `<p>Cliente: <strong>${payment.client_name}</strong></p><p>Valor: <strong>R$ ${payment.value.toFixed(2)}</strong></p><div class="form-group"><label for="faturar-order-code">Código do Pedido</label><input type="text" id="faturar-order-code" required></div><p>Utilizar o valor total?</p><button class="btn btn-success" id="faturar-total-sim">Sim</button> <button class="btn btn-secondary" id="faturar-total-nao">Não</button><div id="faturar-valor-parcial-group" class="form-group hidden"><label for="faturar-valor-parcial">Valor utilizado</label><input type="number" id="faturar-valor-parcial" step="0.01"></div>`;
-        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Confirmar Faturamento', className: 'btn btn-primary', handler: async () => {
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Confirmar Faturamento', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
             const orderCode = document.getElementById('faturar-order-code').value;
-            if (!orderCode) return alert('O código do pedido é obrigatório.');
+            if (!orderCode) {
+                alert('O código do pedido é obrigatório.');
+                button.disabled = false; button.textContent = 'Confirmar Faturamento';
+                return;
+            }
             if (useTotal) {
                 const { error } = await dbClient.from('payments').update({ status: 'Faturado', order_code: orderCode, processed_at: new Date(), processed_by_user_id: state.currentUser.id }).eq('id', paymentId);
-                if (error) return alert('Erro ao faturar.');
+                if (error) { alert('Erro ao faturar.'); button.disabled = false; button.textContent = 'Confirmar Faturamento'; return; }
             } else {
                 const usedValue = parseFloat(document.getElementById('faturar-valor-parcial').value);
-                if (!usedValue || usedValue <= 0 || usedValue >= payment.value) return alert('Valor parcial inválido.');
+                if (!usedValue || usedValue <= 0 || usedValue >= payment.value) {
+                    alert('Valor parcial inválido.');
+                    button.disabled = false; button.textContent = 'Confirmar Faturamento';
+                    return;
+                }
                 const { error: updateError } = await dbClient.from('payments').update({ status: 'Faturado Parcialmente', value: usedValue, order_code: orderCode, processed_at: new Date(), processed_by_user_id: state.currentUser.id }).eq('id', paymentId);
-                if (updateError) return alert('Erro ao atualizar pagamento original.');
+                if (updateError) { alert('Erro ao atualizar pagamento original.'); button.disabled = false; button.textContent = 'Confirmar Faturamento'; return; }
                 const remainingValue = payment.value - usedValue;
                 const { error: insertError } = await dbClient.from('payments').insert([{ client_name: payment.client_name, value: remainingValue, payment_type_id: payment.payment_type_id, status: 'Confirmado', parent_payment_id: paymentId, created_by_user_id: state.currentUser.id }]);
-                if (insertError) return alert('Erro ao criar pagamento restante. Contate o suporte.');
+                if (insertError) { alert('Erro ao criar pagamento restante. Contate o suporte.'); button.disabled = false; button.textContent = 'Confirmar Faturamento'; return; }
             }
             alert('Operação concluída!'); closeModal(); renderPaymentsTable();
         }}];
@@ -439,11 +539,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const { data: payment, error } = await dbClient.from('payments').select('*').eq('id', paymentId).single();
         if (error || !payment) return alert('Erro ao carregar dados do pagamento.');
         const bodyHtml = `<p>Converter <strong>R$ ${payment.value.toFixed(2)}</strong> em crédito para <strong>${payment.client_name}</strong>?</p><div class="form-group"><label for="credit-description">Descrição</label><input type="text" id="credit-description" value="Saldo do pagamento de ${new Date(payment.created_at).toLocaleDateString()}" required></div>`;
-        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Confirmar Conversão', className: 'btn btn-primary', handler: async () => {
+        const footerButtons = [ { text: 'Cancelar', className: 'btn btn-secondary', handler: closeModal }, { text: 'Confirmar Conversão', className: 'btn btn-primary', handler: async (e) => {
+            const button = e.target;
+            button.disabled = true; button.textContent = 'Salvando...';
             const { error: updateError } = await dbClient.from('payments').update({ status: 'Convertido em Crédito', last_modified_at: new Date(), last_modified_by_user_id: state.currentUser.id }).eq('id', paymentId);
-            if (updateError) return alert('Erro ao atualizar status.');
+            if (updateError) { alert('Erro ao atualizar status.'); button.disabled = false; button.textContent = 'Confirmar Conversão'; return; }
             const { error: insertError } = await dbClient.from('credits').insert([{ client_name: payment.client_name, description: document.getElementById('credit-description').value, original_value: payment.value, current_value: payment.value, status: 'Disponível', created_by_user_id: state.currentUser.id }]);
-            if (insertError) return alert('Erro ao criar o crédito. Contate o suporte.');
+            if (insertError) { alert('Erro ao criar o crédito. Contate o suporte.'); button.disabled = false; button.textContent = 'Confirmar Conversão'; return; }
             alert('Pagamento convertido em crédito!'); closeModal(); renderPaymentsTable();
         }}];
         openModal(`Converter Pagamento #${payment.id} em Crédito`, bodyHtml, footerButtons);
