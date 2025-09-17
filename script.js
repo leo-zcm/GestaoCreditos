@@ -5,7 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const SUPABASE_URL = 'https://munhzkymbxwixydnuvyl.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11bmh6a3ltYnh3aXh5ZG51dnlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxNDEyMDksImV4cCI6MjA3MzcxNzIwOX0.s7Qu4usG3Z3AokosWNtMwmivpt6IGpvsWzLtti24ibc';
 
-    const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { createClient } = window.supabase;
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // =================================================================================
     //  VARIÁVEIS GLOBAIS E ELEMENTOS DO DOM
