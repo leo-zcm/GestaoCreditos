@@ -1,45 +1,53 @@
-// Definição de todas as permissões possíveis para gerar o formulário
+// js/modules/usuarios.js
+
+// Definição global de todas as permissões e funções para construir os formulários dinamicamente
 const ALL_PERMISSIONS = {
     admin: {
         gerenciar_usuarios: "Gerenciar Usuários (Acesso total)"
     },
     comprovantes: {
-        ver: "Ver Módulo",
-        inserir: "Inserir Pagamentos",
-        editar: "Editar (antes de confirmar)",
+        ver: "Ver Módulo de Comprovantes",
+        inserir: "Inserir Novos Pagamentos",
+        editar: "Editar Pagamentos (antes de confirmar)",
         confirmar: "Confirmar Pagamentos",
         faturar: "Faturar Pagamentos",
         baixar: "Baixar Pagamentos",
-        gerar_credito: "Transformar em Crédito"
+        gerar_credito: "Transformar Pagamentos em Crédito"
     },
     creditos: {
-        ver: "Ver Módulo",
-        ver_apenas_meus: "Ver Apenas Meus Créditos (Vendedor)",
-        inserir: "Inserir Crédito",
-        editar: "Editar (enquanto disponível)",
-        abater: "Abater Crédito"
+        ver: "Ver Módulo de Créditos",
+        ver_apenas_meus: "Ver Apenas Meus Créditos (para Vendedores)",
+        inserir: "Inserir Crédito Manualmente",
+        editar: "Editar Créditos (enquanto 'Disponível')",
+        abater: "Abater Créditos"
     },
     solicitacoes: {
-        ver: "Ver Módulo",
-        ver_apenas_minhas: "Ver Apenas Minhas Solicitações (Vendedor)",
-        inserir: "Inserir Solicitação",
-        editar: "Editar (enquanto pendente)",
+        ver: "Ver Módulo de Solicitações D/C",
+        ver_apenas_minhas: "Ver Apenas Minhas Solicitações (para Vendedores)",
+        inserir: "Inserir Nova Solicitação",
+        editar: "Editar Solicitações (enquanto 'Pendente')",
         aprovar_rejeitar: "Aprovar/Rejeitar Solicitações"
     }
 };
 
 const ALL_FUNCOES = ['faturista', 'financeiro', 'caixa', 'garantia', 'vendedor', 'admin'];
 
+
+/**
+ * Renderiza a página de gerenciamento de usuários.
+ */
 async function renderUsuariosPage() {
     const mainContent = document.getElementById('main-content');
-    if (!auth.user.permissoes.admin) {
+    
+    // Verificação de segurança: Apenas administradores podem ver esta página.
+    if (!auth.hasPermission('admin', 'gerenciar_usuarios')) {
         mainContent.innerHTML = '<h2>Acesso Negado</h2><p>Você não tem permissão para acessar esta página.</p>';
         return;
     }
 
     mainContent.innerHTML = `
         <div class="card">
-            <button id="add-usuario" class="btn btn-success">Novo Usuário</button>
+            <button id="add-usuario-btn" class="btn btn-success">Novo Usuário</button>
         </div>
         <div class="table-container">
             <table id="usuarios-table">
@@ -48,150 +56,207 @@ async function renderUsuariosPage() {
                         <th>Usuário</th>
                         <th>Nome</th>
                         <th>Funções</th>
-                        <th>Ativo</th>
+                        <th>Status</th>
                         <th>Ações</th>
                     </tr>
                 </thead>
-                <tbody></tbody>
+                <tbody>
+                    <tr><td colspan="5">Carregando usuários...</td></tr>
+                </tbody>
             </table>
         </div>
     `;
 
-    document.getElementById('add-usuario').addEventListener('click', () => showUsuarioModal());
+    document.getElementById('add-usuario-btn').addEventListener('click', () => showUsuarioModal());
     loadUsuarios();
 }
 
+/**
+ * Carrega a lista de usuários da API e preenche a tabela.
+ */
 async function loadUsuarios() {
     const tbody = document.querySelector('#usuarios-table tbody');
-    tbody.innerHTML = '<tr><td colspan="5">Carregando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5">Carregando usuários...</td></tr>';
 
-    const { data, error } = await api.getUsers();
+    const { data: users, error } = await api.getUsers();
+
     if (error) {
         tbody.innerHTML = '<tr><td colspan="5">Erro ao carregar usuários.</td></tr>';
+        console.error(error);
         return;
     }
 
-    tbody.innerHTML = data.map(user => `
+    if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5">Nenhum usuário encontrado.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = users.map(user => `
         <tr data-user='${JSON.stringify(user)}'>
             <td>${user.usuario}</td>
             <td>${user.nome}</td>
-            <td>${user.funcoes.join(', ')}</td>
-            <td>${user.ativo ? 'Sim' : 'Não'}</td>
+            <td>${user.funcoes ? user.funcoes.join(', ') : 'N/A'}</td>
+            <td><span class="status-tag ${user.ativo ? 'status-aprovado' : 'status-rejeitado'}">${user.ativo ? 'Ativo' : 'Inativo'}</span></td>
             <td>
-                <button class="btn btn-primary action-btn-usuario" data-action="edit">Editar</button>
-                <button class="btn btn-warning action-btn-usuario" data-action="password">Alterar Senha</button>
+                <button class="btn btn-primary btn-sm action-btn" data-action="edit">Editar</button>
+                <button class="btn btn-warning btn-sm action-btn" data-action="password">Alterar Senha</button>
             </td>
         </tr>
     `).join('');
 
-    document.querySelectorAll('.action-btn-usuario').forEach(btn => {
+    // Adiciona os event listeners aos botões de ação recém-criados
+    document.querySelectorAll('#usuarios-table .action-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const user = JSON.parse(e.target.closest('tr').dataset.user);
             const action = e.target.dataset.action;
-            if (action === 'edit') showUsuarioModal(user);
-            if (action === 'password') showChangePasswordModal(user.id);
+
+            if (action === 'edit') {
+                showUsuarioModal(user);
+            } else if (action === 'password') {
+                showChangePasswordModal(user);
+            }
         });
     });
 }
 
+/**
+ * Exibe o modal para criar ou editar um usuário.
+ * @param {object|null} user - O objeto do usuário para editar, ou null para criar um novo.
+ */
 function showUsuarioModal(user = null) {
     const isEdit = user !== null;
-    const title = isEdit ? 'Editar Usuário' : 'Novo Usuário';
+    const title = isEdit ? `Editar Usuário: ${user.nome}` : 'Criar Novo Usuário';
 
-    let funcoesHtml = ALL_FUNCOES.map(funcao => `
-        <label><input type="checkbox" name="funcoes" value="${funcao}" ${isEdit && user.funcoes.includes(funcao) ? 'checked' : ''}> ${funcao}</label>
-    `).join('<br>');
+    // Gera os checkboxes para as funções
+    const funcoesHtml = ALL_FUNCOES.map(funcao => `
+        <label class="checkbox-label">
+            <input type="checkbox" name="funcoes" value="${funcao}" ${isEdit && user.funcoes && user.funcoes.includes(funcao) ? 'checked' : ''}>
+            ${funcao.charAt(0).toUpperCase() + funcao.slice(1)}
+        </label>
+    `).join('');
 
+    // Gera os checkboxes para as permissões detalhadas
     let permissoesHtml = '';
     for (const module in ALL_PERMISSIONS) {
-        permissoesHtml += `<h4>${module.charAt(0).toUpperCase() + module.slice(1)}</h4>`;
-        for (const p in ALL_PERMISSIONS[module]) {
-            const isChecked = isEdit && user.permissoes[module] && user.permissoes[module][p];
-            permissoesHtml += `<label><input type="checkbox" name="perm_${module}_${p}" ${isChecked ? 'checked' : ''}> ${ALL_PERMISSIONS[module][p]}</label><br>`;
+        permissoesHtml += `<h4 class="permission-module">${module.charAt(0).toUpperCase() + module.slice(1)}</h4>`;
+        for (const p_key in ALL_PERMISSIONS[module]) {
+            const isChecked = isEdit && user.permissoes && user.permissoes[module] && user.permissoes[module][p_key];
+            permissoesHtml += `
+                <label class="checkbox-label">
+                    <input type="checkbox" name="perm_${module}_${p_key}" ${isChecked ? 'checked' : ''}>
+                    ${ALL_PERMISSIONS[module][p_key]}
+                </label>`;
         }
     }
 
     const modalHtml = `
         <form id="usuario-form">
             <input type="hidden" name="id" value="${isEdit ? user.id : ''}">
-            <div class="form-group">
-                <label>Usuário (Maiúsculas, sem espaços)</label>
-                <input type="text" name="usuario" value="${isEdit ? user.usuario : ''}" ${isEdit ? 'readonly' : ''} required style="text-transform:uppercase">
-            </div>
-            <div class="form-group">
-                <label>Nome Completo</label>
-                <input type="text" name="nome" value="${isEdit ? user.nome : ''}" required>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="usuario">Usuário de Login (sem espaços, maiúsculas)</label>
+                    <input type="text" id="usuario" name="usuario" value="${isEdit ? user.usuario : ''}" ${isEdit ? 'readonly' : ''} required style="text-transform: uppercase;">
+                </div>
+                <div class="form-group">
+                    <label for="nome">Nome Completo</label>
+                    <input type="text" id="nome" name="nome" value="${isEdit ? user.nome : ''}" required>
+                </div>
             </div>
             ${!isEdit ? `
             <div class="form-group">
-                <label>Senha (mínimo 6 caracteres)</label>
-                <input type="password" name="senha" required>
-            </div>` : ''}
+                <label for="senha">Senha Provisória (mínimo 6 caracteres)</label>
+                <input type="password" id="senha" name="senha" required autocomplete="new-password">
+            </div>
+            ` : ''}
             <div class="form-group">
-                <label>Ativo</label>
-                <select name="ativo">
-                    <option value="true" ${isEdit && user.ativo ? 'selected' : ''}>Sim</option>
-                    <option value="false" ${isEdit && !user.ativo ? 'selected' : ''}>Não</option>
+                <label for="ativo">Status do Usuário</label>
+                <select id="ativo" name="ativo">
+                    <option value="true" ${isEdit && user.ativo ? 'selected' : ''}>Ativo</option>
+                    <option value="false" ${isEdit && !user.ativo ? 'selected' : ''}>Inativo</option>
                 </select>
             </div>
+            <hr>
             <div class="form-group">
                 <h4>Funções</h4>
-                ${funcoesHtml}
+                <div class="checkbox-group">${funcoesHtml}</div>
             </div>
+            <hr>
             <div class="form-group">
                 <h4>Permissões Detalhadas</h4>
-                ${permissoesHtml}
+                <div class="checkbox-group">${permissoesHtml}</div>
             </div>
-            <button type="submit" class="btn btn-primary">${isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">${isEdit ? 'Salvar Alterações' : 'Criar Usuário'}</button>
+            </div>
         </form>
     `;
     showModal(title, modalHtml);
 
+    // Lógica de submissão do formulário
     document.getElementById('usuario-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const formData = new FormData(e.target);
+        const form = e.target;
+        const formData = new FormData(form);
         const userData = {
             funcoes: formData.getAll('funcoes'),
             permissoes: {}
         };
         
+        // Constrói o objeto de dados a partir do formulário
         for (const [key, value] of formData.entries()) {
             if (key.startsWith('perm_')) {
-                const [, module, p] = key.split('_');
-                if (!userData.permissoes[module]) userData.permissoes[module] = {};
-                userData.permissoes[module][p] = true;
+                const [, module, p_key] = key.split('_');
+                if (!userData.permissoes[module]) {
+                    userData.permissoes[module] = {};
+                }
+                userData.permissoes[module][p_key] = true;
             } else if (key !== 'funcoes') {
                 userData[key] = value;
             }
         }
         userData.ativo = userData.ativo === 'true';
-        userData.usuario = userData.usuario.toUpperCase();
-
-        let response;
-        if (isEdit) {
-            response = await api.updateUser(userData);
-        } else {
-            response = await api.createUser(userData);
+        if (userData.usuario) {
+            userData.usuario = userData.usuario.toUpperCase();
         }
 
-        if (response.error) {
-            showNotification('Erro: ' + response.error.message, 'error');
-        } else {
+        try {
+            let response;
+            if (isEdit) {
+                response = await api.updateUser(userData);
+            } else {
+                response = await api.adminCreateUser(userData);
+            }
+
+            if (response.error) {
+                throw new Error(response.error.message);
+            }
+
             showNotification(`Usuário ${isEdit ? 'atualizado' : 'criado'} com sucesso!`, 'success');
             hideModal();
             loadUsuarios();
+        } catch (error) {
+            showNotification(`Erro: ${error.message}`, 'error');
         }
     });
 }
 
-function showChangePasswordModal(userId) {
+/**
+ * Exibe o modal para alterar a senha de um usuário.
+ * @param {object} user - O objeto do usuário cuja senha será alterada.
+ */
+function showChangePasswordModal(user) {
     const modalHtml = `
+        <p>Você está alterando a senha para o usuário <strong>${user.nome} (${user.usuario})</strong>.</p>
         <form id="change-password-form">
             <div class="form-group">
                 <label for="new_password">Nova Senha (mínimo 6 caracteres)</label>
-                <input type="password" id="new_password" required>
+                <input type="password" id="new_password" required autocomplete="new-password">
             </div>
-            <button type="submit" class="btn btn-primary">Alterar Senha</button>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="hideModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Confirmar Nova Senha</button>
+            </div>
         </form>
     `;
     showModal('Alterar Senha', modalHtml);
@@ -199,12 +264,21 @@ function showChangePasswordModal(userId) {
     document.getElementById('change-password-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const newPassword = document.getElementById('new_password').value;
-        const { error } = await api.updateUserPassword(userId, newPassword);
-        if (error) {
-            showNotification('Erro ao alterar senha: ' + error.message, 'error');
-        } else {
+
+        try {
+            // AVISO: A API do Supabase para alterar a senha de OUTRO usuário
+            // requer uma Edge Function por motivos de segurança.
+            // A chamada abaixo está preparada para essa função.
+            const { error } = await api.adminUpdateUserPassword(user.id, newPassword);
+            
+            if (error) {
+                throw new Error(error.message);
+            }
+
             showNotification('Senha alterada com sucesso!', 'success');
             hideModal();
+        } catch (error) {
+            showNotification(`Erro ao alterar senha: ${error.message}`, 'error');
         }
     });
 }
