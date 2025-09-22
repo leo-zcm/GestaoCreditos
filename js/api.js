@@ -1,17 +1,27 @@
+// js/api.js
+
 // Centraliza todas as interações com o Supabase
 
 const api = {
     // Auth (usando Database Functions via RPC)
     login: async (usuario, senha) => {
+        // --- ALTERADO ---
+        // AVISO IMPORTANTE: Sua função 'authenticate_user' no Supabase DEVE ser ajustada
+        // para retornar não apenas os dados do usuário, mas também um JWT válido.
+        // O objeto retornado deve ser algo como:
+        // { id, nome, funcoes, permissoes, token }
+        // Onde 'token' é o JWT gerado para a sessão do usuário.
         const { data, error } = await supabaseClient.rpc('authenticate_user', {
             p_usuario: usuario,
             p_senha: senha
         });
-        // A RPC retorna um array, mesmo que seja um único resultado.
+        
         if (error || !data || data.length === 0) {
+            console.error("Erro na autenticação RPC:", error);
             return { data: null, error: error || new Error('Usuário ou senha inválidos.') };
         }
-        return { data: { user: data[0] }, error: null };
+        // A RPC retorna um array, então pegamos o primeiro elemento.
+        return { data: data[0], error: null };
     },
     
     // Usuários (usando Database Functions para operações seguras)
@@ -25,9 +35,8 @@ const api = {
         });
     },
     updateUser: (userData) => {
-        // A atualização de dados normais (sem senha) continua sendo um UPDATE normal.
         const { id, ...updateData } = userData;
-        delete updateData.usuario; // Não permite alterar o nome de usuário
+        delete updateData.usuario;
         return supabaseClient.from('usuarios').update(updateData).eq('id', id);
     },
     updateUserPassword: (id, senha) => {
@@ -38,7 +47,13 @@ const api = {
     },
     getUsers: () => supabaseClient.from('usuarios').select('id, created_at, usuario, nome, funcoes, permissoes, ativo').order('nome'),
     
-    // Clientes e Produtos
+    // --- NOVO ---
+    // Funções de busca por código para os novos inputs dinâmicos
+    getClienteByCodigo: (codigo) => supabaseClient.from('clientes_erp').select('codigo, nome').eq('codigo', codigo).single(),
+    getProdutoByCodigo: (codigo) => supabaseClient.from('produtos_erp').select('codigo, nome').eq('codigo', codigo).single(),
+    // ----------------
+
+    // Clientes e Produtos (mantidos para selects em massa se necessário no futuro)
     getClientes: () => supabaseClient.from('clientes_erp').select('codigo, nome').order('nome'),
     getProdutos: () => supabaseClient.from('produtos_erp').select('codigo, nome').order('nome'),
 
@@ -50,7 +65,7 @@ const api = {
         let query = supabaseClient.from('comprovantes')
             .select(`
                 id, created_at, updated_at, valor, status, pedido_faturado, comprovante_url,
-                cliente:clientes_erp(nome),
+                cliente_codigo, cliente_nome_manual,
                 tipo_pagamento:tipos_pagamento(nome, cor)
             `)
             .order('updated_at', { ascending: false });
@@ -132,12 +147,12 @@ const api = {
         const { count: pagamentosParaBaixa } = await supabaseClient.from('comprovantes').select('*', { count: 'exact', head: true }).eq('status', 'FATURADO');
         const { count: solicitacoesPendentes } = await supabaseClient.from('solicitacoes_dc').select('*', { count: 'exact', head: true }).eq('status', 'PENDENTE');
         
-        let queryCreditos = supabaseClient.from('creditos').select('cliente_codigo', { count: 'exact', head: true }).eq('status', 'DISPONÍVEL');
+        let queryCreditos = supabaseClient.from('creditos').select('id', { count: 'exact', head: true }).eq('status', 'DISPONÍVEL');
         if (auth.hasPermission('creditos', 'ver_apenas_meus')) {
             queryCreditos = queryCreditos.eq('vendedor_id', user.id);
         }
-        const { count: clientesComCredito } = await queryCreditos;
+        const { count: creditosDisponiveis } = await queryCreditos;
 
-        return { pagamentosConfirmados, pagamentosParaBaixa, solicitacoesPendentes, clientesComCredito };
+        return { pagamentosConfirmados, pagamentosParaBaixa, solicitacoesPendentes, creditosDisponiveis };
     }
 };
