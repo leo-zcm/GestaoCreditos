@@ -5,67 +5,90 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestão de Créditos</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
     <!-- TELA DE LOGIN -->
-    <div id="login-container">
+    <div id="login-container" class="container">
         <div class="login-box">
             <h1>Gestão de Créditos</h1>
             <form id="login-form">
-                <input type="text" id="username" placeholder="Usuário" required>
-                <input type="password" id="password" placeholder="Senha" required>
-                <button type="submit">Entrar</button>
+                <div class="form-group">
+                    <label for="username">Usuário</label>
+                    <input type="text" id="username" required autocomplete="username" style="text-transform:uppercase">
+                </div>
+                <div class="form-group">
+                    <label for="password">Senha</label>
+                    <input type="password" id="password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary">Entrar</button>
                 <p id="login-error" class="error-message"></p>
             </form>
         </div>
     </div>
 
-    <!-- APLICAÇÃO PRINCIPAL (escondida por padrão) -->
+    <!-- APLICAÇÃO PRINCIPAL (oculta por padrão) -->
     <div id="app-container" class="hidden">
-        <aside class="sidebar">
+        <nav id="sidebar">
             <div class="sidebar-header">
                 <h2>Gestão de Créditos</h2>
             </div>
-            <nav id="main-menu">
-                <ul>
-                    <li><a href="#" data-page="home">Home</a></li>
-                    <li><a href="#" data-page="comprovantes">Comprovantes</a></li>
-                    <li><a href="#" data-page="solicitacoes">Solicitações D/C</a></li>
-                    <li><a href="#" data-page="creditos">Créditos</a></li>
-                    <li><a href="#" data-page="usuarios">Usuários</a></li>
-                </ul>
-            </nav>
-        </aside>
-
-        <div class="main-wrapper">
-            <header class="app-header">
-                <h1 id="page-title">Home</h1>
-                <div class="user-info">
-                    <span id="user-display"></span>
-                    <button id="logout-button">Sair</button>
+            <ul id="menu-links">
+                <!-- Links do menu serão inseridos pelo JS -->
+            </ul>
+        </nav>
+        <div id="main-panel">
+            <header id="top-bar">
+                <h1 id="page-title"></h1>
+                <div id="user-info">
+                    <span id="user-name"></span>
+                    <button id="logout-btn" class="btn btn-secondary">Sair</button>
                 </div>
             </header>
             <main id="main-content">
-                <!-- Conteúdo da página será injetado aqui -->
+                <!-- Conteúdo da página será inserido pelo JS -->
             </main>
         </div>
     </div>
 
     <!-- MODAL GENÉRICO -->
-    <div id="modal-container" class="hidden">
+    <div id="modal-container" class="modal-container hidden">
         <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title"></h2>
-                <button id="modal-close-button">&times;</button>
+                <button id="modal-close-btn" class="modal-close">&times;</button>
             </div>
             <div id="modal-body">
-                <!-- Conteúdo do modal será injetado aqui -->
+                <!-- Conteúdo do modal será inserido pelo JS -->
             </div>
         </div>
     </div>
+    
+    <!-- NOTIFICAÇÕES / TOASTS -->
+    <div id="notification-container"></div>
 
-    <script src="script.js"></script>
+    <!-- SCRIPTS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        // Configuração global do Supabase
+        const SUPABASE_URL = "https://fzeszxedmitqvigtvzxf.supabase.co";
+        const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6ZXN6eGVkbWl0cXZpZ3R2enhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgxOTczNTIsImV4cCI6MjA3Mzc3MzM1Mn0.1Y76kKp0YUWRhYf3J_mTxl8m9hEa1bHf8KJ18rqIvk0";
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    </script>
+    
+    <!-- Módulos da Aplicação -->
+    <script src="js/ui.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/modules/home.js"></script>
+    <script src="js/modules/comprovantes.js"></script>
+    <script src="js/modules/solicitacoes.js"></script>
+    <script src="js/modules/creditos.js"></script>
+    <script src="js/modules/usuarios.js"></script>
+    <script src="js/main.js"></script>
+
 </body>
 </html>
