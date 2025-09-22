@@ -1,14 +1,42 @@
 // Centraliza todas as interações com o Supabase
 
 const api = {
-    // Auth
-    login: (usuario, senha) => supabase.functions.invoke('login', { body: { usuario, senha } }),
+    // Auth (agora usando Database Functions via RPC)
+    login: async (usuario, senha) => {
+        const { data, error } = await supabase.rpc('authenticate_user', {
+            p_usuario: usuario,
+            p_senha: senha
+        });
+        // A RPC retorna um array, mesmo que seja um único resultado.
+        if (error || !data || data.length === 0) {
+            return { data: null, error: error || new Error('Usuário ou senha inválidos.') };
+        }
+        return { data: { user: data[0] }, error: null };
+    },
     
-    // Usuários (via Edge Function para segurança)
-    createUser: (userData) => supabase.functions.invoke('manage-user', { body: { action: 'create', userData } }),
-    updateUser: (userData) => supabase.functions.invoke('manage-user', { body: { action: 'update', userData } }),
-    updateUserPassword: (id, senha) => supabase.functions.invoke('manage-user', { body: { action: 'update_password', userData: { id, senha } } }),
-    getUsers: () => supabase.from('usuarios').select('*').order('nome'),
+    // Usuários (agora usando Database Functions para operações seguras)
+    createUser: (userData) => {
+        return supabase.rpc('create_new_user', {
+            p_usuario: userData.usuario,
+            p_nome: userData.nome,
+            p_senha: userData.senha,
+            p_funcoes: userData.funcoes,
+            p_permissoes: userData.permissoes
+        });
+    },
+    updateUser: (userData) => {
+        // A atualização de dados normais (sem senha) continua sendo um UPDATE normal.
+        const { id, ...updateData } = userData;
+        delete updateData.usuario; // Não permite alterar o nome de usuário
+        return supabase.from('usuarios').update(updateData).eq('id', id);
+    },
+    updateUserPassword: (id, senha) => {
+        return supabase.rpc('update_user_password', {
+            p_user_id: id,
+            p_new_senha: senha
+        });
+    },
+    getUsers: () => supabase.from('usuarios').select('id, created_at, usuario, nome, funcoes, permissoes, ativo').order('nome'),
     
     // Clientes e Produtos
     getClientes: () => supabase.from('clientes_erp').select('codigo, nome').order('nome'),
@@ -21,7 +49,7 @@ const api = {
     getComprovantes: (filters, page = 1, perPage = 50) => {
         let query = supabase.from('comprovantes')
             .select(`
-                id, created_at, updated_at, valor, status, pedido_faturado,
+                id, created_at, updated_at, valor, status, pedido_faturado, comprovante_url,
                 cliente:clientes_erp(nome),
                 tipo_pagamento:tipos_pagamento(nome, cor)
             `)
@@ -49,8 +77,9 @@ const api = {
     getSolicitacoes: (filters, page = 1, perPage = 50) => {
         let query = supabase.from('solicitacoes_dc')
             .select(`
-                id, created_at, status, debito_valor, credito_valor,
-                solicitante:usuarios(nome),
+                id, created_at, status, debito_valor, credito_valor, debito_qtd, credito_qtd,
+                debito_cliente_codigo, credito_cliente_codigo, debito_produto_codigo, credito_produto_codigo,
+                solicitante:usuarios(id, nome),
                 debito_cliente:clientes_erp(nome),
                 credito_cliente:clientes_erp(nome),
                 debito_produto:produtos_erp(nome),
@@ -84,7 +113,7 @@ const api = {
 
         if (filters.status) query = query.eq('status', filters.status);
         if (filters.cliente_query) query = query.or(`cliente_codigo.ilike.%${filters.cliente_query}%,clientes_erp.nome.ilike.%${filters.cliente_query}%`);
-        // Adicionar outros filtros aqui...
+        if (filters.vendedor_id) query = query.eq('vendedor_id', filters.vendedor_id);
         
         const from = (page - 1) * perPage;
         const to = from + perPage - 1;
