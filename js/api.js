@@ -2,26 +2,26 @@
 
 const api = {
     // Auth
-    login: (usuario, senha) => supabase.functions.invoke('login', { body: { usuario, senha } }),
+    login: (usuario, senha) => supabaseClient.functions.invoke('login', { body: { usuario, senha } }),
     
     // Usuários (via Edge Function para segurança)
-    createUser: (userData) => supabase.functions.invoke('manage-user', { body: { action: 'create', userData } }),
-    updateUser: (userData) => supabase.functions.invoke('manage-user', { body: { action: 'update', userData } }),
-    updateUserPassword: (id, senha) => supabase.functions.invoke('manage-user', { body: { action: 'update_password', userData: { id, senha } } }),
-    getUsers: () => supabase.from('usuarios').select('*').order('nome'),
+    createUser: (userData) => supabaseClient.functions.invoke('manage-user', { body: { action: 'create', userData } }),
+    updateUser: (userData) => supabaseClient.functions.invoke('manage-user', { body: { action: 'update', userData } }),
+    updateUserPassword: (id, senha) => supabaseClient.functions.invoke('manage-user', { body: { action: 'update_password', userData: { id, senha } } }),
+    getUsers: () => supabaseClient.from('usuarios').select('*').order('nome'),
     
     // Clientes e Produtos
-    getClientes: () => supabase.from('clientes_erp').select('codigo, nome').order('nome'),
-    getProdutos: () => supabase.from('produtos_erp').select('codigo, nome').order('nome'),
+    getClientes: () => supabaseClient.from('clientes_erp').select('codigo, nome').order('nome'),
+    getProdutos: () => supabaseClient.from('produtos_erp').select('codigo, nome').order('nome'),
 
     // Tipos de Pagamento
-    getTiposPagamento: () => supabase.from('tipos_pagamento').select('*'),
+    getTiposPagamento: () => supabaseClient.from('tipos_pagamento').select('*'),
 
     // Comprovantes
     getComprovantes: (filters, page = 1, perPage = 50) => {
-        let query = supabase.from('comprovantes')
+        let query = supabaseClient.from('comprovantes')
             .select(`
-                id, created_at, updated_at, valor, status, pedido_faturado,
+                id, created_at, updated_at, valor, status, pedido_faturado, comprovante_url,
                 cliente:clientes_erp(nome),
                 tipo_pagamento:tipos_pagamento(nome, cor)
             `)
@@ -37,20 +37,21 @@ const api = {
         
         return query;
     },
-    getComprovanteById: (id) => supabase.from('comprovantes').select('*, historico_status').eq('id', id).single(),
-    createComprovante: (data) => supabase.from('comprovantes').insert(data).select().single(),
-    updateComprovante: (id, data) => supabase.from('comprovantes').update(data).eq('id', id),
+    getComprovanteById: (id) => supabaseClient.from('comprovantes').select('*, historico_status').eq('id', id).single(),
+    createComprovante: (data) => supabaseClient.from('comprovantes').insert(data).select().single(),
+    updateComprovante: (id, data) => supabaseClient.from('comprovantes').update(data).eq('id', id),
     uploadComprovante: (file) => {
         const fileName = `${Date.now()}_${file.name}`;
-        return supabase.storage.from('comprovantes').upload(fileName, file);
+        return supabaseClient.storage.from('comprovantes').upload(fileName, file);
     },
 
     // Solicitações D/C
     getSolicitacoes: (filters, page = 1, perPage = 50) => {
-        let query = supabase.from('solicitacoes_dc')
+        let query = supabaseClient.from('solicitacoes_dc')
             .select(`
-                id, created_at, status, debito_valor, credito_valor,
-                solicitante:usuarios(nome),
+                id, created_at, status, debito_valor, credito_valor, debito_qtd, credito_qtd,
+                debito_cliente_codigo, credito_cliente_codigo, debito_produto_codigo, credito_produto_codigo,
+                solicitante:usuarios(id, nome),
                 debito_cliente:clientes_erp(nome),
                 credito_cliente:clientes_erp(nome),
                 debito_produto:produtos_erp(nome),
@@ -69,12 +70,12 @@ const api = {
 
         return query;
     },
-    createSolicitacao: (data) => supabase.from('solicitacoes_dc').insert(data),
-    updateSolicitacao: (id, data) => supabase.from('solicitacoes_dc').update(data).eq('id', id),
+    createSolicitacao: (data) => supabaseClient.from('solicitacoes_dc').insert(data),
+    updateSolicitacao: (id, data) => supabaseClient.from('solicitacoes_dc').update(data).eq('id', id),
 
     // Créditos
     getCreditos: (filters, page = 1, perPage = 50) => {
-        let query = supabase.from('creditos')
+        let query = supabaseClient.from('creditos')
             .select(`
                 id, created_at, valor, descricao, quantidade, status, pedido_abatido,
                 cliente:clientes_erp(codigo, nome),
@@ -84,7 +85,7 @@ const api = {
 
         if (filters.status) query = query.eq('status', filters.status);
         if (filters.cliente_query) query = query.or(`cliente_codigo.ilike.%${filters.cliente_query}%,clientes_erp.nome.ilike.%${filters.cliente_query}%`);
-        // Adicionar outros filtros aqui...
+        if (filters.vendedor_id) query = query.eq('vendedor_id', filters.vendedor_id);
         
         const from = (page - 1) * perPage;
         const to = from + perPage - 1;
@@ -92,18 +93,18 @@ const api = {
 
         return query;
     },
-    createCredito: (data) => supabase.from('creditos').insert(data),
-    updateCredito: (id, data) => supabase.from('creditos').update(data).eq('id', id),
+    createCredito: (data) => supabaseClient.from('creditos').insert(data),
+    updateCredito: (id, data) => supabaseClient.from('creditos').update(data).eq('id', id),
 
     // Dashboard Stats
     getDashboardStats: async () => {
         const user = auth.getCurrentUser();
         
-        const { count: pagamentosConfirmados } = await supabase.from('comprovantes').select('*', { count: 'exact', head: true }).eq('status', 'CONFIRMADO');
-        const { count: pagamentosParaBaixa } = await supabase.from('comprovantes').select('*', { count: 'exact', head: true }).eq('status', 'FATURADO');
-        const { count: solicitacoesPendentes } = await supabase.from('solicitacoes_dc').select('*', { count: 'exact', head: true }).eq('status', 'PENDENTE');
+        const { count: pagamentosConfirmados } = await supabaseClient.from('comprovantes').select('*', { count: 'exact', head: true }).eq('status', 'CONFIRMADO');
+        const { count: pagamentosParaBaixa } = await supabaseClient.from('comprovantes').select('*', { count: 'exact', head: true }).eq('status', 'FATURADO');
+        const { count: solicitacoesPendentes } = await supabaseClient.from('solicitacoes_dc').select('*', { count: 'exact', head: true }).eq('status', 'PENDENTE');
         
-        let queryCreditos = supabase.from('creditos').select('cliente_codigo', { count: 'exact', head: true }).eq('status', 'DISPONÍVEL');
+        let queryCreditos = supabaseClient.from('creditos').select('cliente_codigo', { count: 'exact', head: true }).eq('status', 'DISPONÍVEL');
         if (auth.hasPermission('creditos', 'ver_apenas_meus')) {
             queryCreditos = queryCreditos.eq('vendedor_id', user.id);
         }
