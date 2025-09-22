@@ -1,66 +1,68 @@
-// js/auth.js
-
 const auth = {
-    user: null,
-    token: null,
+    user: null, // Armazenará os dados da nossa tabela 'usuarios' (com funções e permissões)
 
-    init() {
-        const sessionData = sessionStorage.getItem('supabase.session');
-        if (sessionData) {
-            const session = JSON.parse(sessionData);
-            this.user = session.user;
-            this.token = session.token;
+    async init() {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session && session.user) {
+            // Se há uma sessão ativa, buscamos nosso perfil customizado
+            const { data: userData, error } = await supabaseClient
+                .from('usuarios')
+                .select('*')
+                .eq('id', session.user.id)
+                .single();
             
-            // --- CRÍTICO ---
-            // Configura a sessão no cliente Supabase para que todas as futuras
-            // chamadas à API sejam autenticadas.
-            if (this.token) {
-                supabaseClient.auth.setSession({ access_token: this.token, refresh_token: '' });
+            if (userData) {
+                this.user = userData;
+                return true;
             }
-            return true;
         }
+        // Se não há sessão ou perfil, limpa tudo
+        this.user = null;
         return false;
     },
 
     async login(username, password) {
-        const { data, error } = await api.login(username, password);
+        // Passo 1: Buscar o email correspondente ao username
+        const { data: email, error: emailError } = await api.getEmailByUsername(username);
 
-        if (error || !data) {
-            console.error('Falha no login:', error);
-            throw new Error(error?.message || 'Usuário ou senha inválidos.');
+        if (emailError || !email) {
+            throw new Error('Usuário ou senha inválidos.');
         }
 
-        // --- CRÍTICO ---
-        // A API agora deve retornar o usuário e o token
-        if (!data.token) {
-            console.error("CRÍTICO: A função RPC 'authenticate_user' não retornou um 'token' (JWT).");
-            throw new Error('Erro de configuração do servidor. Contate o administrador.');
+        // Passo 2: Tentar fazer o login com o email e senha usando o Supabase Auth
+        const { data: sessionData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+            email: email,
+            password: password,
+        });
+
+        if (signInError) {
+            throw new Error('Usuário ou senha inválidos.');
         }
 
-        this.user = {
-            id: data.id,
-            nome: data.nome,
-            funcoes: data.funcoes,
-            permissoes: data.permissoes
-            // Não armazene informações sensíveis aqui
-        };
-        this.token = data.token;
+        if (sessionData.user) {
+            // Passo 3: Se o login foi bem-sucedido, buscar nosso perfil customizado
+            const { data: userData, error: userError } = await supabaseClient
+                .from('usuarios')
+                .select('*')
+                .eq('id', sessionData.user.id)
+                .single();
+            
+            if (userError) {
+                // Se deu erro aqui, algo está muito errado (ex: perfil não existe)
+                await this.logout(); // Desloga por segurança
+                throw new Error('Falha ao carregar dados do perfil do usuário.');
+            }
+            
+            this.user = userData;
+            return true;
+        }
 
-        // Armazena a sessão completa
-        const session = { user: this.user, token: this.token };
-        sessionStorage.setItem('supabase.session', JSON.stringify(session));
-
-        // Configura a sessão no cliente Supabase
-        supabaseClient.auth.setSession({ access_token: this.token, refresh_token: '' });
-        
-        return true;
+        return false;
     },
 
-    logout() {
+    async logout() {
+        await supabaseClient.auth.signOut();
         this.user = null;
-        this.token = null;
-        sessionStorage.removeItem('supabase.session');
-        supabaseClient.auth.signOut(); // Limpa a sessão do cliente
         window.location.hash = '';
         window.location.reload();
     },
@@ -71,8 +73,7 @@ const auth = {
 
     hasPermission(module, action) {
         if (!this.user || !this.user.permissoes) return false;
-        if (this.user.permissoes.admin === true || (this.user.permissoes.admin && this.user.permissoes.admin.gerenciar_usuarios)) return true;
-        
+        if (this.user.permissoes.admin === true) return true;
         return this.user.permissoes[module] && this.user.permissoes[module][action];
     },
 
