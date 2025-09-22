@@ -1,36 +1,66 @@
+// js/auth.js
+
 const auth = {
     user: null,
+    token: null,
 
     init() {
-        const userData = sessionStorage.getItem('user');
-        if (userData) {
-            this.user = JSON.parse(userData);
+        const sessionData = sessionStorage.getItem('supabase.session');
+        if (sessionData) {
+            const session = JSON.parse(sessionData);
+            this.user = session.user;
+            this.token = session.token;
+            
+            // --- CRÍTICO ---
+            // Configura a sessão no cliente Supabase para que todas as futuras
+            // chamadas à API sejam autenticadas.
+            if (this.token) {
+                supabaseClient.auth.setSession({ access_token: this.token, refresh_token: '' });
+            }
             return true;
         }
         return false;
     },
 
     async login(username, password) {
-        // Esta parte recebe o resultado da API
         const { data, error } = await api.login(username, password);
 
-        // --- CORREÇÃO AQUI ---
-        // Se a API retornou um objeto de erro, nós simplesmente o lançamos.
-        // Não tentamos mais inspecionar o objeto 'data', que será nulo neste caso.
-        if (error) {
-            throw new Error(error.message || 'Usuário ou senha inválidos.');
+        if (error || !data) {
+            console.error('Falha no login:', error);
+            throw new Error(error?.message || 'Usuário ou senha inválidos.');
         }
-        // ---------------------
 
-        // Se o código chegou até aqui, significa que não houve erro e 'data' é válido.
-        this.user = data.user;
-        sessionStorage.setItem('user', JSON.stringify(this.user));
+        // --- CRÍTICO ---
+        // A API agora deve retornar o usuário e o token
+        if (!data.token) {
+            console.error("CRÍTICO: A função RPC 'authenticate_user' não retornou um 'token' (JWT).");
+            throw new Error('Erro de configuração do servidor. Contate o administrador.');
+        }
+
+        this.user = {
+            id: data.id,
+            nome: data.nome,
+            funcoes: data.funcoes,
+            permissoes: data.permissoes
+            // Não armazene informações sensíveis aqui
+        };
+        this.token = data.token;
+
+        // Armazena a sessão completa
+        const session = { user: this.user, token: this.token };
+        sessionStorage.setItem('supabase.session', JSON.stringify(session));
+
+        // Configura a sessão no cliente Supabase
+        supabaseClient.auth.setSession({ access_token: this.token, refresh_token: '' });
+        
         return true;
     },
 
     logout() {
         this.user = null;
-        sessionStorage.removeItem('user');
+        this.token = null;
+        sessionStorage.removeItem('supabase.session');
+        supabaseClient.auth.signOut(); // Limpa a sessão do cliente
         window.location.hash = '';
         window.location.reload();
     },
@@ -41,7 +71,6 @@ const auth = {
 
     hasPermission(module, action) {
         if (!this.user || !this.user.permissoes) return false;
-        // A permissão de admin sobrepõe todas as outras
         if (this.user.permissoes.admin === true || (this.user.permissoes.admin && this.user.permissoes.admin.gerenciar_usuarios)) return true;
         
         return this.user.permissoes[module] && this.user.permissoes[module][action];
