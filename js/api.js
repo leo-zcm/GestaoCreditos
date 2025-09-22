@@ -1,14 +1,42 @@
 // Centraliza todas as interações com o Supabase
 
 const api = {
-    // Auth
-    login: (usuario, senha) => supabaseClient.functions.invoke('login', { body: { usuario, senha } }),
+    // Auth (usando Database Functions via RPC)
+    login: async (usuario, senha) => {
+        const { data, error } = await supabaseClient.rpc('authenticate_user', {
+            p_usuario: usuario,
+            p_senha: senha
+        });
+        // A RPC retorna um array, mesmo que seja um único resultado.
+        if (error || !data || data.length === 0) {
+            return { data: null, error: error || new Error('Usuário ou senha inválidos.') };
+        }
+        return { data: { user: data[0] }, error: null };
+    },
     
-    // Usuários (via Edge Function para segurança)
-    createUser: (userData) => supabaseClient.functions.invoke('manage-user', { body: { action: 'create', userData } }),
-    updateUser: (userData) => supabaseClient.functions.invoke('manage-user', { body: { action: 'update', userData } }),
-    updateUserPassword: (id, senha) => supabaseClient.functions.invoke('manage-user', { body: { action: 'update_password', userData: { id, senha } } }),
-    getUsers: () => supabaseClient.from('usuarios').select('*').order('nome'),
+    // Usuários (usando Database Functions para operações seguras)
+    createUser: (userData) => {
+        return supabaseClient.rpc('create_new_user', {
+            p_usuario: userData.usuario,
+            p_nome: userData.nome,
+            p_senha: userData.senha,
+            p_funcoes: userData.funcoes,
+            p_permissoes: userData.permissoes
+        });
+    },
+    updateUser: (userData) => {
+        // A atualização de dados normais (sem senha) continua sendo um UPDATE normal.
+        const { id, ...updateData } = userData;
+        delete updateData.usuario; // Não permite alterar o nome de usuário
+        return supabaseClient.from('usuarios').update(updateData).eq('id', id);
+    },
+    updateUserPassword: (id, senha) => {
+        return supabaseClient.rpc('update_user_password', {
+            p_user_id: id,
+            p_new_senha: senha
+        });
+    },
+    getUsers: () => supabaseClient.from('usuarios').select('id, created_at, usuario, nome, funcoes, permissoes, ativo').order('nome'),
     
     // Clientes e Produtos
     getClientes: () => supabaseClient.from('clientes_erp').select('codigo, nome').order('nome'),
