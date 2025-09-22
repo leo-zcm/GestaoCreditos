@@ -11,12 +11,18 @@ const auth = {
     },
 
     async login(username, password) {
+        // Esta parte recebe o resultado da API
         const { data, error } = await api.login(username, password);
 
-        if (error || !data.user) {
-            throw new Error(data.error || 'Falha no login.');
+        // --- CORREÇÃO AQUI ---
+        // Se a API retornou um objeto de erro, nós simplesmente o lançamos.
+        // Não tentamos mais inspecionar o objeto 'data', que será nulo neste caso.
+        if (error) {
+            throw new Error(error.message || 'Usuário ou senha inválidos.');
         }
+        // ---------------------
 
+        // Se o código chegou até aqui, significa que não houve erro e 'data' é válido.
         this.user = data.user;
         sessionStorage.setItem('user', JSON.stringify(this.user));
         return true;
@@ -35,7 +41,8 @@ const auth = {
 
     hasPermission(module, action) {
         if (!this.user || !this.user.permissoes) return false;
-        if (this.user.permissoes.admin === true) return true;
+        // A permissão de admin sobrepõe todas as outras
+        if (this.user.permissoes.admin === true || (this.user.permissoes.admin && this.user.permissoes.admin.gerenciar_usuarios)) return true;
         
         return this.user.permissoes[module] && this.user.permissoes[module][action];
     },
