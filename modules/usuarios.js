@@ -1,4 +1,4 @@
-// modules/usuarios.js
+// modules/usuarios.js (VERSÃO CORRIGIDA E COMPLETA)
 
 const UsuariosModule = (() => {
     // Modelo de todas as permissões possíveis na plataforma
@@ -26,16 +26,13 @@ const UsuariosModule = (() => {
         }
     };
     
-    // Lista de todas as Funções (Roles) disponíveis para a tela Home
     const ALL_ROLES = ['VENDEDOR', 'CAIXA', 'FINANCEIRO', 'FATURISTA', 'GARANTIA'];
 
-    // Renderiza o modal para criar ou editar um usuário
     const renderUserModal = (user = null) => {
         const modalBody = document.getElementById('modal-body');
         const isNewUser = user === null;
         const userPerms = user?.permissions || {};
 
-        // Gera os checkboxes para as Funções (Roles)
         const rolesCheckboxes = ALL_ROLES.map(role => `
             <div class="checkbox-group">
                 <input type="checkbox" id="role-${role}" name="roles" value="${role}" ${user && user.roles.includes(role) ? 'checked' : ''}>
@@ -43,7 +40,6 @@ const UsuariosModule = (() => {
             </div>
         `).join('');
 
-        // Gera a matriz de permissões
         let permissionsHtml = '';
         for (const moduleKey in ALL_PERMISSIONS) {
             const module = ALL_PERMISSIONS[moduleKey];
@@ -99,7 +95,6 @@ const UsuariosModule = (() => {
         document.getElementById('user-form').addEventListener('submit', handleFormSubmit);
     };
 
-    // Lida com o envio do formulário do modal
     const handleFormSubmit = async (e) => {
         e.preventDefault();
         showLoader();
@@ -111,31 +106,28 @@ const UsuariosModule = (() => {
         const username = form.username.value.toUpperCase();
         const selectedRoles = Array.from(form.querySelectorAll('input[name="roles"]:checked')).map(cb => cb.value);
 
-        // Constrói o objeto de permissões a partir do formulário
         const newPermissions = {};
         for (const moduleKey in ALL_PERMISSIONS) {
             newPermissions[moduleKey] = {};
             for (const permKey in ALL_PERMISSIONS[moduleKey].perms) {
                 const input = form[`perm-${moduleKey}-${permKey}`];
-                if (input.type === 'checkbox') {
-                    newPermissions[moduleKey][permKey] = input.checked;
-                } else if (input.tagName === 'SELECT') {
-                    newPermissions[moduleKey][permKey] = input.value;
+                if(input) { // Checa se o elemento existe
+                    if (input.type === 'checkbox') {
+                        newPermissions[moduleKey][permKey] = input.checked;
+                    } else if (input.tagName === 'SELECT') {
+                        newPermissions[moduleKey][permKey] = input.value;
+                    }
                 }
             }
         }
 
         try {
-            const profileData = {
-                full_name: fullName,
-                roles: selectedRoles,
-                permissions: newPermissions
-            };
+            const profileData = { full_name: fullName, roles: selectedRoles, permissions: newPermissions };
 
-            if (userId) { // Editando
+            if (userId) {
                 const { error } = await supabase.from('profiles').update(profileData).eq('id', userId);
                 if (error) throw error;
-            } else { // Criando
+            } else {
                 const password = form.password.value;
                 const email = `${username.toLowerCase()}@zcm.local`;
                 const { data: authData, error: signUpError } = await supabase.auth.signUp({ email, password });
@@ -156,9 +148,74 @@ const UsuariosModule = (() => {
         }
     };
 
-    // Carrega e exibe a lista de usuários (sem grandes alterações)
-    const loadUsers = async () => { /* ... código de loadUsers ... */ };
+    // ==================================================================
+    // AQUI ESTÁ A CORREÇÃO - A FUNÇÃO AGORA ESTÁ COMPLETA
+    // ==================================================================
+    const loadUsers = async () => {
+        showLoader();
+        const contentArea = document.getElementById('content-area');
+        // Limpa a área de conteúdo e desenha a estrutura da página
+        contentArea.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h2>Gerenciamento de Usuários</h2>
+                    <button id="btn-create-user" class="btn btn-primary">Criar Novo Usuário</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nome Completo</th>
+                                <th>Usuário</th>
+                                <th>Funções</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-list">
+                            <!-- Os usuários serão inseridos aqui -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
 
+        // Busca os dados no Supabase
+        const { data: users, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('full_name', { ascending: true });
+
+        if (error) {
+            console.error("Erro ao carregar usuários:", error);
+            contentArea.innerHTML += '<p class="error-message">Não foi possível carregar os usuários.</p>';
+        } else {
+            // Preenche a tabela com os dados
+            const usersList = document.getElementById('users-list');
+            usersList.innerHTML = users.map(user => `
+                <tr>
+                    <td>${user.full_name}</td>
+                    <td>${user.username}</td>
+                    <td>${user.roles ? user.roles.join(', ') : 'Nenhuma'}</td>
+                    <td>
+                        <button class="btn btn-secondary btn-sm btn-edit-user" data-user-id="${user.id}">Editar</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            // Adiciona os event listeners para os botões de ação
+            document.getElementById('btn-create-user').addEventListener('click', () => renderUserModal());
+            
+            document.querySelectorAll('.btn-edit-user').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const userId = e.target.dataset.userId;
+                    const userToEdit = users.find(u => u.id === userId);
+                    renderUserModal(userToEdit);
+                });
+            });
+        }
+        hideLoader();
+    };
+    
+    // Objeto público do módulo
     return {
         name: 'Usuários',
         render: () => {
@@ -170,7 +227,12 @@ const UsuariosModule = (() => {
                 .checkbox-group { display: flex; align-items: center; }
                 .checkbox-group input { margin-right: 0.5rem; }
             `;
-            document.head.appendChild(style);
+            // Garante que o estilo não seja adicionado múltiplas vezes
+            if (!document.head.querySelector('#usuarios-module-style')) {
+                style.id = 'usuarios-module-style';
+                document.head.appendChild(style);
+            }
+            
             loadUsers();
         },
     };
