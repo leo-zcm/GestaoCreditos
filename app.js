@@ -48,12 +48,7 @@ const modules = {
             document.getElementById('content-area').innerHTML = '<div class="card"><h2>Módulo de Créditos</h2><p>Conteúdo do módulo de créditos será carregado aqui...</p></div>';
         }
     },
-    usuarios: {
-        name: 'Usuários',
-        render: () => {
-            document.getElementById('content-area').innerHTML = '<div class="card"><h2>Módulo de Usuários</h2><p>Conteúdo do módulo de gerenciamento de usuários será carregado aqui...</p></div>';
-        }
-    }
+    usuarios: UsuariosModule
 };
 
 
