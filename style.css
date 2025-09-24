@@ -275,6 +275,8 @@ tbody tr:hover {
     max-width: 600px;
     position: relative;
     box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 .modal-close-btn {
