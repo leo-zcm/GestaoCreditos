@@ -1,12 +1,11 @@
-// auth.js
+// auth.js (VERSÃO CORRIGIDA)
 
-// 1. CONFIGURAÇÃO E INICIALIZAÇÃO DO SUPABASE
+// 1. CONFIGURAÇÃO E INICIALIZAÇÃO DO SUPABASE (sem alterações)
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
-
 const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// 2. SELETORES DE ELEMENTOS DO DOM
+// 2. SELETORES DE ELEMENTOS DO DOM (sem alterações)
 const loginScreen = document.getElementById('login-screen');
 const appScreen = document.getElementById('app-screen');
 const loginForm = document.getElementById('login-form');
@@ -14,71 +13,32 @@ const logoutButton = document.getElementById('logout-button');
 const loginError = document.getElementById('login-error');
 const loader = document.getElementById('loader');
 
-// Funções utilitárias para mostrar/esconder o loader
 const showLoader = () => loader.classList.add('active');
 const hideLoader = () => loader.classList.remove('active');
 
 /**
- * Busca o perfil do usuário e suas permissões consolidadas.
- * @param {string} userId - O UUID do usuário do Supabase.
- * @returns {object|null} Objeto com dados do perfil e permissões ou null se falhar.
+ * ALTERAÇÃO: Busca o perfil do usuário com suas permissões individuais.
+ * A função ficou muito mais simples e direta.
  */
-async function getUserProfileWithPermissions(userId) {
+async function getUserProfile(userId) {
     try {
-        // 1. Busca o perfil básico do usuário (que contém suas 'roles')
-        const { data: profile, error: profileError } = await supabase
+        const { data: profile, error } = await supabase
             .from('profiles')
-            .select('id, username, full_name, roles, is_admin')
+            .select('id, username, full_name, roles, is_admin, permissions') // Pega a nova coluna
             .eq('id', userId)
             .single();
 
-        if (profileError) throw profileError;
-        if (!profile) return null;
-
-        // 2. Busca as permissões para cada 'role' do usuário
-        const { data: permissionsData, error: permissionsError } = await supabase
-            .from('role_permissions')
-            .select('role, permissions')
-            .in('role', profile.roles);
-        
-        if (permissionsError) throw permissionsError;
-
-        // 3. Consolida as permissões de todas as 'roles' em um único objeto
-        const mergedPermissions = {};
-        permissionsData.forEach(rolePermission => {
-            const rolePerms = rolePermission.permissions;
-            for (const module in rolePerms) {
-                if (!mergedPermissions[module]) {
-                    mergedPermissions[module] = {};
-                }
-                for (const perm in rolePerms[module]) {
-                    // Lógica de merge: 'true' sobrepõe 'false', 'all' sobrepõe 'own'
-                    const existingPerm = mergedPermissions[module][perm];
-                    const newPerm = rolePerms[module][perm];
-                    
-                    if (existingPerm === 'all' || newPerm === 'all') {
-                        mergedPermissions[module][perm] = 'all';
-                    } else if (existingPerm === true || newPerm === true) {
-                         mergedPermissions[module][perm] = true;
-                    } else if (existingPerm === 'own' || newPerm === 'own') {
-                        mergedPermissions[module][perm] = 'own';
-                    } else {
-                        mergedPermissions[module][perm] = newPerm;
-                    }
-                }
-            }
-        });
-
-        return { ...profile, permissions: mergedPermissions };
+        if (error) throw error;
+        return profile;
 
     } catch (error) {
-        console.error('Erro ao buscar perfil e permissões:', error.message);
+        console.error('Erro ao buscar perfil do usuário:', error.message);
         return null;
     }
 }
 
 
-// 3. LÓGICA DE LOGIN
+// 3. LÓGICA DE LOGIN (sem alterações na lógica, apenas na chamada da função)
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     showLoader();
@@ -88,67 +48,51 @@ loginForm.addEventListener('submit', async (e) => {
     const password = document.getElementById('password').value;
 
     try {
-        // Passo 1: Chamar a função RPC para obter o email a partir do nome de usuário
-        const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', {
-            p_username: username
-        });
+        const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
+        if (rpcError || !email) throw new Error('Usuário não encontrado.');
 
-        if (rpcError || !email) {
-            throw new Error('Usuário não encontrado.');
-        }
-
-        // Passo 2: Tentar fazer login com o email retornado e a senha
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-            email: email,
-            password: password,
-        });
-
-        if (signInError) {
-            throw new Error('Usuário ou senha inválidos.');
-        }
-
-        // Se o login for bem-sucedido, o onAuthStateChange cuidará do resto.
-        // O loader será escondido dentro do onAuthStateChange após a inicialização do app.
-
+        const { error: signInError } = await supabase.auth.signInWithPassword({ email: email, password: password });
+        if (signInError) throw new Error('Usuário ou senha inválidos.');
+        
     } catch (error) {
         console.error('Erro de login:', error.message);
-        loginError.textContent = 'Usuário ou senha inválidos.';
+        loginError.textContent = error.message; // Mostra o erro real
         hideLoader();
     }
 });
 
-// 4. LÓGICA DE LOGOUT
+// 4. LÓGICA DE LOGOUT (sem alterações)
 logoutButton.addEventListener('click', async () => {
     showLoader();
     await supabase.auth.signOut();
-    // onAuthStateChange vai detectar a ausência de sessão e redirecionar para o login.
-    // Escondemos o loader aqui para garantir uma transição suave.
-    hideLoader();
-    window.location.reload(); // Força a recarga para limpar o estado da aplicação
+    window.location.reload();
 });
 
 
-// 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO
+/**
+ * 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (ALTERAÇÃO CRÍTICA)
+ * Adicionado tratamento de erro robusto para evitar o loader infinito.
+ */
 supabase.auth.onAuthStateChange(async (event, session) => {
     if (session && session.user) {
-        // Usuário está logado
         showLoader();
-        const userProfile = await getUserProfileWithPermissions(session.user.id);
+        const userProfile = await getUserProfile(session.user.id);
         
         if (userProfile) {
-            // Inicializa a aplicação principal
-            App.init(userProfile);
+            App.init(userProfile); // Inicializa a aplicação
             loginScreen.classList.remove('active');
-            appScreen.style.display = 'flex'; // Usar style para sobrescrever o .screen
+            appScreen.style.display = 'flex';
+            hideLoader();
         } else {
-            // Falha ao carregar o perfil, força o logout
-            console.error("Não foi possível carregar o perfil do usuário. Deslogando.");
+            // CORREÇÃO: Se não conseguir carregar o perfil, força o logout e recarrega.
+            // Isso limpa a sessão inválida e previne o loader infinito.
+            console.error("Não foi possível carregar o perfil do usuário. Deslogando para limpar a sessão.");
             await supabase.auth.signOut();
+            window.location.reload(); 
         }
-        hideLoader();
     } else {
-        // Usuário não está logado
         appScreen.style.display = 'none';
         loginScreen.classList.add('active');
+        hideLoader(); // Garante que o loader não fique preso
     }
 });
