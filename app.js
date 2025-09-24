@@ -104,6 +104,8 @@ const App = {
     /**
      * Configura os ouvintes de eventos globais da aplicação.
      */
+
+
     setupEventListeners() {
         // Delegação de eventos para os links de navegação
         const nav = document.getElementById('main-nav');
@@ -111,8 +113,6 @@ const App = {
             if (e.target.tagName === 'A' && e.target.dataset.module) {
                 e.preventDefault();
                 this.loadModule(e.target.dataset.module);
-                
-                // Em telas pequenas, esconde o menu após o clique
                 document.getElementById('sidebar').classList.remove('active');
             }
         });
@@ -122,12 +122,19 @@ const App = {
         menuToggle.addEventListener('click', () => {
             document.getElementById('sidebar').classList.toggle('active');
         });
-    },
 
-    /**
-     * Carrega o conteúdo de um módulo na área principal.
-     * @param {string} moduleId - O ID do módulo a ser carregado ('home', 'comprovantes', etc.).
-     */
+        // ==================================================================
+        // CORREÇÃO: Adicionar listeners para fechar o modal genérico
+        // ==================================================================
+        const modalContainer = document.getElementById('modal-container');
+        modalContainer.addEventListener('click', (e) => {
+            // Fecha se clicar no fundo (o próprio container) ou no botão de fechar
+            if (e.target === modalContainer || e.target.closest('.modal-close-btn')) {
+                modalContainer.classList.remove('active');
+            }
+        });
+    },
+    
     loadModule(moduleId) {
         if (!modules[moduleId]) {
             console.error(`Módulo '${moduleId}' não encontrado.`);
