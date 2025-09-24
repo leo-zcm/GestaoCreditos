@@ -1,4 +1,4 @@
-// app.js:
+// app.js
 
 // Módulos da aplicação (serão substituídos pelos arquivos reais)
 // Por enquanto, são funções que renderizam conteúdo placeholder.
@@ -53,44 +53,37 @@ const modules = {
 
 
 const App = {
-    // Para armazenar dados do usuário logado
     currentUser: null,
 
-    /**
-     * Ponto de entrada da aplicação. Chamado por auth.js após login bem-sucedido.
-     * @param {object} userProfile - O objeto do usuário com perfil e permissões.
-     */
     init(userProfile) {
         this.currentUser = userProfile;
         this.setupHeader();
         this.buildSidebar();
         this.setupEventListeners();
-        
-        // Carrega a página inicial por padrão
         this.loadModule('home');
     },
 
-    /**
-     * Configura o cabeçalho com informações do usuário.
-     */
     setupHeader() {
         document.getElementById('user-display-name').textContent = this.currentUser.full_name;
     },
 
     /**
-     * Constrói o menu lateral dinamicamente com base nas permissões do usuário.
+     * ALTERAÇÃO: Constrói o menu com base nas permissões INDIVIDUAIS do usuário.
      */
     buildSidebar() {
         const nav = document.getElementById('main-nav');
-        nav.innerHTML = ''; // Limpa o menu
+        nav.innerHTML = '';
         const ul = document.createElement('ul');
 
+        // As permissões agora vêm diretamente do objeto do usuário
+        const userPermissions = this.currentUser.permissions || {};
+
         const menuItems = [
-            { id: 'home', requiredPermission: true }, // Home sempre visível
-            { id: 'comprovantes', requiredPermission: this.currentUser.permissions?.comprovantes?.view },
-            { id: 'solicitacoes', requiredPermission: this.currentUser.permissions?.solicitacoes?.view },
-            { id: 'creditos', requiredPermission: this.currentUser.permissions?.creditos?.view },
-            { id: 'usuarios', requiredPermission: this.currentUser.is_admin } // Apenas para admins
+            { id: 'home', requiredPermission: true },
+            { id: 'comprovantes', requiredPermission: userPermissions.comprovantes?.view },
+            { id: 'solicitacoes', requiredPermission: userPermissions.solicitacoes?.view },
+            { id: 'creditos', requiredPermission: userPermissions.creditos?.view },
+            { id: 'usuarios', requiredPermission: this.currentUser.is_admin }
         ];
         
         menuItems.forEach(item => {
