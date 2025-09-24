@@ -1,4 +1,4 @@
-// app.js
+// app.js:
 
 // Módulos da aplicação (serão substituídos pelos arquivos reais)
 // Por enquanto, são funções que renderizam conteúdo placeholder.
