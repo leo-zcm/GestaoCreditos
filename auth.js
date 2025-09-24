@@ -1,4 +1,4 @@
-// auth.js (VERSÃO CORRIGIDA)
+// auth.js (VERSÃO BLINDADA)
 
 // 1. CONFIGURAÇÃO E INICIALIZAÇÃO DO SUPABASE (sem alterações)
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
@@ -16,47 +16,36 @@ const loader = document.getElementById('loader');
 const showLoader = () => loader.classList.add('active');
 const hideLoader = () => loader.classList.remove('active');
 
-/**
- * ALTERAÇÃO: Busca o perfil do usuário com suas permissões individuais.
- * A função ficou muito mais simples e direta.
- */
 async function getUserProfile(userId) {
     try {
         const { data: profile, error } = await supabase
             .from('profiles')
-            .select('id, username, full_name, roles, is_admin, permissions') // Pega a nova coluna
+            .select('id, username, full_name, roles, is_admin, permissions')
             .eq('id', userId)
             .single();
-
         if (error) throw error;
         return profile;
-
     } catch (error) {
         console.error('Erro ao buscar perfil do usuário:', error.message);
         return null;
     }
 }
 
-
-// 3. LÓGICA DE LOGIN (sem alterações na lógica, apenas na chamada da função)
+// 3. LÓGICA DE LOGIN (sem alterações)
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     showLoader();
     loginError.textContent = '';
-
     const username = document.getElementById('username').value.toUpperCase();
     const password = document.getElementById('password').value;
-
     try {
         const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
         if (rpcError || !email) throw new Error('Usuário não encontrado.');
-
         const { error: signInError } = await supabase.auth.signInWithPassword({ email: email, password: password });
         if (signInError) throw new Error('Usuário ou senha inválidos.');
-        
     } catch (error) {
         console.error('Erro de login:', error.message);
-        loginError.textContent = error.message; // Mostra o erro real
+        loginError.textContent = error.message;
         hideLoader();
     }
 });
@@ -70,8 +59,8 @@ logoutButton.addEventListener('click', async () => {
 
 
 /**
- * 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (ALTERAÇÃO CRÍTICA)
- * Adicionado tratamento de erro robusto para evitar o loader infinito.
+ * 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (VERSÃO CORRIGIDA)
+ * Lida com sessões inválidas e previne o loop de carregamento.
  */
 supabase.auth.onAuthStateChange(async (event, session) => {
     if (session && session.user) {
@@ -79,20 +68,22 @@ supabase.auth.onAuthStateChange(async (event, session) => {
         const userProfile = await getUserProfile(session.user.id);
         
         if (userProfile) {
-            App.init(userProfile); // Inicializa a aplicação
+            App.init(userProfile);
             loginScreen.classList.remove('active');
             appScreen.style.display = 'flex';
             hideLoader();
         } else {
-            // CORREÇÃO: Se não conseguir carregar o perfil, força o logout e recarrega.
-            // Isso limpa a sessão inválida e previne o loader infinito.
-            console.error("Não foi possível carregar o perfil do usuário. Deslogando para limpar a sessão.");
+            // CORREÇÃO: Se a sessão existe mas o perfil não pode ser carregado,
+            // a sessão é inválida. Forçamos o logout.
+            // O próprio signOut vai disparar este onAuthStateChange novamente,
+            // que cairá no 'else' final e limpará a tela corretamente.
+            console.error("Sessão inválida detectada. Limpando...");
             await supabase.auth.signOut();
-            window.location.reload(); 
         }
     } else {
+        // CORREÇÃO: Garante que a tela de login seja exibida de forma limpa.
         appScreen.style.display = 'none';
         loginScreen.classList.add('active');
-        hideLoader(); // Garante que o loader não fique preso
+        hideLoader(); // Garante que o loader seja escondido.
     }
 });
