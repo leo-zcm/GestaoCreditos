@@ -287,8 +287,8 @@ const ComprovantesModule = (() => {
             }
 
             const proofData = {
-                client_code: form.clientCode.value.toUpperCase(),
-                client_name_manual: form.clientName.disabled ? null : form.clientName.value, // Salva nome manual se aplicável
+                client_code: form.clientCode.value.toUpperCase() || null,
+                client_name_manual: form.clientName.disabled ? null : form.clientName.value,
                 value: parseFloat(form.value.value),
                 payment_type_id: form.payment_type.value,
                 proof_url: proofUrl,
