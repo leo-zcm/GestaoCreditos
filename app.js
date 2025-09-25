@@ -43,6 +43,7 @@ const modules = {
 
 const App = {
     currentUser: null,
+    visibilityListenerSetup: false,
 
     init(userProfile) {
         this.currentUser = userProfile;
@@ -50,9 +51,6 @@ const App = {
         this.buildSidebar();
         this.setupEventListeners();
         
-        // ==================================================================
-        // CORREÇÃO: Adiciona o listener para reativar a sessão
-        // ==================================================================
         this.setupVisibilityListener();
 
         this.loadModule('home');
@@ -112,19 +110,23 @@ const App = {
     },
 
     /**
-     * CORREÇÃO: Nova função para lidar com a visibilidade da aba.
-     * Quando a aba volta a ficar visível, forçamos o Supabase a verificar
-     * e, se necessário, renovar a sessão.
+     * Sets up a listener to re-validate the session when the tab becomes visible.
+     * A flag prevents this listener from being added more than once.
      */
     setupVisibilityListener() {
+        if (this.visibilityListenerSetup) {
+            return; // Do not add the listener again if it's already there.
+        }
+        
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
-                // supabase.auth.getSession() é a forma inteligente de dizer:
-                // "Verifique minha sessão. Se o token estiver perto de expirar ou já expirou,
-                // use o refresh_token para obter um novo."
+                // supabase.auth.getSession() intelligently refreshes the session
+                // if the token is about to expire.
                 supabase.auth.getSession();
             }
         });
+
+        this.visibilityListenerSetup = true; // Mark the listener as set up.
     },
 
     loadModule(moduleId) {
