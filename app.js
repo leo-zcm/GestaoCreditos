@@ -177,11 +177,9 @@ const App = {
             }
         });
         
-        // LÓGICA DE FECHAMENTO DO MODAL ATUALIZADA
         const modalContainer = document.getElementById('modal-container');
         modalContainer.addEventListener('click', (e) => {
             if (e.target === modalContainer || e.target.classList.contains('modal-close-btn')) {
-                // Verifica se o módulo de comprovantes tem uma função de limpeza e a chama
                 if (this.modules.comprovantes && typeof this.modules.comprovantes.cleanupModalListeners === 'function') {
                     this.modules.comprovantes.cleanupModalListeners();
                 }
@@ -189,7 +187,3 @@ const App = {
             }
         });
     },
-    
-        showLoader() { document.getElementById('loader').classList.add('active'); },
-        hideLoader() { document.getElementById('loader').classList.remove('active'); },
-    };
