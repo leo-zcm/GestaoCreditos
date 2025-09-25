@@ -4,145 +4,177 @@
 const App = {
     userProfile: null,
     initialized: false,
-    // Módulos disponíveis na aplicação
     modules: {
         usuarios: UsuariosModule,
-        // Adicione outros módulos aqui no futuro
-        // creditos: CreditosModule, 
+        // Adicione os objetos dos outros módulos aqui quando criá-los
         // comprovantes: ComprovantesModule,
+        // creditos: CreditosModule,
+        // solicitacoes: SolicitacoesModule,
     },
 
-    // Mapeamento de módulos para suas permissões de visualização
-    modulePermissions: {
-        usuarios: (user) => user.is_admin,
-        creditos: (user) => user.permissions?.creditos?.view,
-        comprovantes: (user) => user.permissions?.comprovantes?.view,
-        solicitacoes: (user) => user.permissions?.solicitacoes?.view,
-    },
+    // ==================================================================
+    // CORREÇÃO 1: ORDEM DO MENU E CONFIGURAÇÃO CENTRALIZADA
+    // Usamos um Array para garantir a ordem de exibição no menu e nos widgets.
+    // ==================================================================
+    moduleConfig: [
+        {
+            key: 'comprovantes',
+            name: 'Comprovantes',
+            permissionCheck: (user) => user.permissions?.comprovantes?.view
+        },
+        {
+            key: 'creditos',
+            name: 'Créditos',
+            permissionCheck: (user) => user.permissions?.creditos?.view
+        },
+        {
+            key: 'solicitacoes',
+            name: 'Solicitações D/C',
+            permissionCheck: (user) => user.permissions?.solicitacoes?.view
+        },
+        {
+            key: 'usuarios',
+            name: 'Usuários',
+            permissionCheck: (user) => user.is_admin
+        }
+    ],
 
-    // Verifica se o app já foi inicializado
     isInitialized() {
         return this.initialized;
     },
 
-    // Inicializa o app com o perfil do usuário
     init(userProfile) {
-        if (this.initialized) {
-            console.warn("App já inicializado, ignorando chamada duplicada.");
-            return;
-        }
+        if (this.initialized) return;
         this.userProfile = userProfile;
         this.initialized = true;
-
         console.log("Aplicação iniciada com o perfil:", userProfile);
-
         this.renderLayout();
         this.setupEventListeners();
-        this.renderHome(); // Carrega a tela inicial/dashboard
+        this.renderHome();
     },
 
-    // Limpa o estado da aplicação ao deslogar
     destroy() {
         this.userProfile = null;
         this.initialized = false;
         console.log("Estado da aplicação limpo.");
     },
 
-    // Renderiza os componentes fixos da UI (header, sidebar)
     renderLayout() {
         document.getElementById('user-display-name').textContent = this.userProfile.full_name || this.userProfile.username;
         this.buildNavigation();
     },
 
-    // ==================================================================
-    // CORREÇÃO 1: LÓGICA DE NAVEGAÇÃO DINÂMICA
-    // ==================================================================
-    // Constrói o menu de navegação com base nas permissões do usuário
     buildNavigation() {
         const nav = document.getElementById('main-nav');
         let navHtml = '<ul>';
-        
-        // Link Fixo para Home/Início
         navHtml += `<li><a href="#" data-module="home" class="nav-link active">Início</a></li>`;
 
-        // Itera sobre as permissões de módulo para construir o menu
-        for (const moduleName in this.modulePermissions) {
-            const hasPermission = this.modulePermissions[moduleName](this.userProfile);
-            
-            if (hasPermission) {
-                // Tenta obter o nome do módulo do objeto do módulo, se existir
-                const moduleDisplayName = this.modules[moduleName]?.name || 
-                                          moduleName.charAt(0).toUpperCase() + moduleName.slice(1); // Fallback
-                navHtml += `<li><a href="#" data-module="${moduleName}" class="nav-link">${moduleDisplayName}</a></li>`;
+        // Itera sobre o Array de configuração para garantir a ordem
+        this.moduleConfig.forEach(config => {
+            if (config.permissionCheck(this.userProfile)) {
+                navHtml += `<li><a href="#" data-module="${config.key}" class="nav-link">${config.name}</a></li>`;
             }
-        }
+        });
 
         navHtml += '</ul>';
         nav.innerHTML = navHtml;
     },
 
     // ==================================================================
-    // CORREÇÃO 2: GERENCIAMENTO DE LOADER SIMPLIFICADO
+    // CORREÇÃO 3: CONTROLE DO LOADER CENTRALIZADO
+    // Esta função agora controla o início e o fim do loader, resolvendo o bug.
     // ==================================================================
-    // Carrega o conteúdo de um módulo na área principal
     async loadModule(moduleName) {
-        this.showLoader(); // Apenas MOSTRA o loader. O módulo é responsável por escondê-lo.
-        
-        const module = this.modules[moduleName];
-        if (module && typeof module.render === 'function') {
-            document.getElementById('header-title').textContent = module.name || 'Módulo';
-            try {
-                // A função render do módulo agora é responsável por todo o fluxo,
-                // incluindo esconder o loader quando terminar.
-                await module.render(); 
-            } catch (error) {
-                console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
-                document.getElementById('content-area').innerHTML = `<p class="error-message">Ocorreu um erro ao carregar este módulo.</p>`;
-                this.hideLoader(); // Esconde o loader em caso de erro na renderização
+        this.showLoader();
+        try {
+            const module = this.modules[moduleName];
+            const moduleConf = this.moduleConfig.find(m => m.key === moduleName);
+            document.getElementById('header-title').textContent = moduleConf?.name || 'Módulo';
+
+            if (module && typeof module.render === 'function') {
+                await module.render(); // Espera a renderização do módulo terminar
+            } else {
+                console.warn(`Módulo "${moduleName}" não implementado ou não encontrado.`);
+                document.getElementById('content-area').innerHTML = `<div class="card"><p>O módulo <strong>${moduleConf.name}</strong> está em desenvolvimento.</p></div>`;
             }
-        } else {
-            console.warn(`Módulo "${moduleName}" não encontrado ou não possui um método render.`);
-            document.getElementById('content-area').innerHTML = `<p>Módulo em desenvolvimento.</p>`;
-            this.hideLoader(); // Esconde o loader se o módulo não for encontrado
+        } catch (error) {
+            console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
+            document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro grave ao carregar este módulo.</div>`;
+        } finally {
+            this.hideLoader(); // Garante que o loader seja escondido, não importa o que aconteça.
         }
     },
 
-    // Renderiza o conteúdo da tela inicial
+    // ==================================================================
+    // CORREÇÃO 2: WIDGETS DA HOME RESTAURADOS
+    // ==================================================================
     renderHome() {
         this.showLoader();
         document.getElementById('header-title').textContent = 'Início';
         const contentArea = document.getElementById('content-area');
+        
+        let widgetsHtml = this.moduleConfig
+            .filter(config => config.permissionCheck(this.userProfile))
+            .map(config => `
+                <div class="home-widget" data-module="${config.key}">
+                    <h3>${config.name}</h3>
+                    <p>Acessar o módulo de ${config.name.toLowerCase()}.</p>
+                </div>
+            `).join('');
+
         contentArea.innerHTML = `
             <div class="card">
                 <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
-                <p>Selecione uma opção no menu ao lado para começar.</p>
+                <p>Selecione um atalho abaixo ou use o menu ao lado para começar.</p>
+            </div>
+            <div class="widgets-container">
+                ${widgetsHtml || '<p>Você não tem permissão para acessar nenhum módulo.</p>'}
             </div>
         `;
+
+        // Adiciona estilo para os widgets (opcional, mas recomendado)
+        const styleId = 'home-widgets-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                .widgets-container { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1.5rem; margin-top: 1.5rem; }
+                .home-widget { background: white; border-radius: 8px; padding: 1.5rem; box-shadow: var(--shadow); cursor: pointer; transition: all 0.2s ease; border-left: 4px solid var(--primary-color); }
+                .home-widget:hover { transform: translateY(-5px); box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+                .home-widget h3 { margin-bottom: 0.5rem; color: var(--primary-color); }
+            `;
+            document.head.appendChild(style);
+        }
+
+        // Adiciona eventos de clique para os widgets
+        document.querySelectorAll('.home-widget').forEach(widget => {
+            widget.addEventListener('click', () => {
+                const moduleName = widget.dataset.module;
+                // Simula o clique no link do menu correspondente
+                const navLink = document.querySelector(`#main-nav a[data-module="${moduleName}"]`);
+                if (navLink) {
+                    navLink.click();
+                }
+            });
+        });
+
         this.hideLoader();
     },
 
-    // Configura os ouvintes de eventos da aplicação
     setupEventListeners() {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
 
-        menuToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
-        });
+        menuToggle.addEventListener('click', () => sidebar.classList.toggle('active'));
 
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
-                
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
-
                 const moduleName = e.target.dataset.module;
-                if (moduleName === 'home') {
-                    this.renderHome();
-                } else {
-                    this.loadModule(moduleName);
-                }
+                if (moduleName === 'home') this.renderHome();
+                else this.loadModule(moduleName);
             }
         });
         
@@ -154,12 +186,6 @@ const App = {
         });
     },
 
-    // Funções utilitárias
-    showLoader() {
-        document.getElementById('loader').classList.add('active');
-    },
-
-    hideLoader() {
-        document.getElementById('loader').classList.remove('active');
-    },
+    showLoader() { document.getElementById('loader').classList.add('active'); },
+    hideLoader() { document.getElementById('loader').classList.remove('active'); },
 };
