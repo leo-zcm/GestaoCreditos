@@ -58,32 +58,42 @@ logoutButton.addEventListener('click', async () => {
 });
 
 
-/**
- * 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (VERSÃO CORRIGIDA)
- * Lida com sessões inválidas e previne o loop de carregamento.
+* 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (VERSÃO FINAL E ROBUSTA)
+ * Previne o loop de carregamento envolvendo a lógica em um try/catch/finally
+ * para garantir que o loader seja sempre escondido, mesmo em caso de erro.
  */
 supabase.auth.onAuthStateChange(async (event, session) => {
-    if (session && session.user) {
-        showLoader();
-        const userProfile = await getUserProfile(session.user.id);
-        
-        if (userProfile) {
-            App.init(userProfile);
-            loginScreen.classList.remove('active');
-            appScreen.style.display = 'flex';
-            hideLoader();
+    showLoader(); // Mostra o loader no início de qualquer mudança de estado
+
+    try {
+        if (session && session.user) {
+            const userProfile = await getUserProfile(session.user.id);
+
+            if (userProfile) {
+                // SUCESSO: Usuário autenticado e perfil carregado
+                App.init(userProfile);
+                loginScreen.classList.remove('active');
+                appScreen.style.display = 'flex';
+            } else {
+                // FALHA CONTROLADA: Sessão existe, mas perfil não foi encontrado (ex: usuário deletado)
+                // Força o logout para limpar a sessão inválida.
+                throw new Error("Sessão de usuário inválida. O perfil não foi encontrado.");
+            }
         } else {
-            // CORREÇÃO: Se a sessão existe mas o perfil não pode ser carregado,
-            // a sessão é inválida. Forçamos o logout.
-            // O próprio signOut vai disparar este onAuthStateChange novamente,
-            // que cairá no 'else' final e limpará a tela corretamente.
-            console.error("Sessão inválida detectada. Limpando...");
-            await supabase.auth.signOut();
+            // ESTADO LIMPO: Nenhum usuário logado
+            appScreen.style.display = 'none';
+            loginScreen.classList.add('active');
         }
-    } else {
-        // CORREÇÃO: Garante que a tela de login seja exibida de forma limpa.
+    } catch (error) {
+        // ERRO INESPERADO: Captura qualquer erro no processo (falha de rede, etc.)
+        console.error("Erro crítico durante a verificação de autenticação:", error.message);
+        // Garante que o usuário seja deslogado em caso de qualquer falha
+        await supabase.auth.signOut(); 
+        // Exibe a tela de login
         appScreen.style.display = 'none';
         loginScreen.classList.add('active');
-        hideLoader(); // Garante que o loader seja escondido.
+    } finally {
+        // GARANTIA: Esconde o loader, não importa o que aconteça.
+        hideLoader();
     }
 });
