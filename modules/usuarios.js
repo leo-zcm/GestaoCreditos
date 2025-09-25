@@ -1,4 +1,4 @@
-// modules/usuarios.js (VERSÃO CORRIGIDA E COMPLETA)
+// modules/usuarios.js (VERSÃO CORRIGIDA E FINAL)
 
 const UsuariosModule = (() => {
     // Modelo de todas as permissões possíveis na plataforma
@@ -97,7 +97,7 @@ const UsuariosModule = (() => {
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
-        showLoader();
+        App.showLoader(); // Usa o loader global
         document.getElementById('modal-error').textContent = '';
         
         const form = e.target;
@@ -121,51 +121,42 @@ const UsuariosModule = (() => {
         try {
             const profileData = { full_name: fullName, roles: selectedRoles, permissions: newPermissions };
 
-            if (userId) { // Editando um usuário existente (lógica inalterada)
+            if (userId) {
                 const { error } = await supabase.from('profiles').update(profileData).eq('id', userId);
                 if (error) throw error;
             } else { 
-                // Criando um novo usuário (lógica do malabarismo de sessão)
-                
-                // 1. SALVA A SESSÃO ATUAL DO ADMIN
                 const { data: { session: adminSession } } = await supabase.auth.getSession();
                 if (!adminSession) throw new Error("Sessão de administrador perdida. Por favor, recarregue a página.");
 
-                // 2. CRIA O NOVO USUÁRIO
-                // Isso vai trocar a sessão ativa para a do novo usuário
                 const password = form.password.value;
                 const email = `${username.toLowerCase()}@zcm.local`;
                 const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
                 if (signUpError) throw signUpError;
                 
-                // 3. ATUALIZA O PERFIL DO NOVO USUÁRIO
                 profileData.username = username;
                 const { error: profileError } = await supabase.from('profiles').update(profileData).eq('id', signUpData.user.id);
                 if (profileError) throw profileError;
 
-                // 4. AQUI ESTÁ A MÁGICA: RESTAURA A SESSÃO DO ADMIN
-                // Isso desloga o novo usuário e restaura o estado original da aplicação
                 const { error: sessionError } = await supabase.auth.setSession(adminSession);
                 if (sessionError) throw sessionError;
             }
 
             document.getElementById('modal-container').classList.remove('active');
-            await loadUsers();
+            await loadUsers(); // Recarrega a lista de usuários
         } catch (error) {
             console.error('Erro ao salvar usuário:', error.message);
             document.getElementById('modal-error').textContent = error.message;
         } finally {
-            hideLoader();
+            App.hideLoader(); // Esconde o loader global
         }
     };
 
     // ==================================================================
-    // AQUI ESTÁ A CORREÇÃO - A FUNÇÃO AGORA ESTÁ COMPLETA
+    // CORREÇÃO 3: MÓDULO AGORA GERENCIA O LOADER CORRETAMENTE
     // ==================================================================
     const loadUsers = async () => {
-        showLoader();
+        // O loader já foi ativado pelo App.loadModule, não precisa chamar App.showLoader() aqui.
         const contentArea = document.getElementById('content-area');
-        // Limpa a área de conteúdo e desenha a estrutura da página
         contentArea.innerHTML = `
             <div class="card">
                 <div class="card-header">
@@ -182,24 +173,19 @@ const UsuariosModule = (() => {
                                 <th>Ações</th>
                             </tr>
                         </thead>
-                        <tbody id="users-list">
-                            <!-- Os usuários serão inseridos aqui -->
-                        </tbody>
+                        <tbody id="users-list"></tbody>
                     </table>
                 </div>
             </div>`;
 
-        // Busca os dados no Supabase
-        const { data: users, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .order('full_name', { ascending: true });
+        try {
+            const { data: users, error } = await supabase
+                .from('profiles')
+                .select('*')
+                .order('full_name', { ascending: true });
 
-        if (error) {
-            console.error("Erro ao carregar usuários:", error);
-            contentArea.innerHTML += '<p class="error-message">Não foi possível carregar os usuários.</p>';
-        } else {
-            // Preenche a tabela com os dados
+            if (error) throw error;
+
             const usersList = document.getElementById('users-list');
             usersList.innerHTML = users.map(user => `
                 <tr>
@@ -212,7 +198,6 @@ const UsuariosModule = (() => {
                 </tr>
             `).join('');
 
-            // Adiciona os event listeners para os botões de ação
             document.getElementById('btn-create-user').addEventListener('click', () => renderUserModal());
             
             document.querySelectorAll('.btn-edit-user').forEach(button => {
@@ -222,14 +207,18 @@ const UsuariosModule = (() => {
                     renderUserModal(userToEdit);
                 });
             });
+        } catch (error) {
+            console.error("Erro ao carregar usuários:", error);
+            contentArea.innerHTML += '<p class="error-message">Não foi possível carregar os usuários.</p>';
+        } finally {
+            App.hideLoader(); // Garante que o loader seja escondido ao final da operação
         }
-        hideLoader();
     };
     
     // Objeto público do módulo
     return {
         name: 'Usuários',
-        render: () => {
+        render: async () => { // A função render agora pode ser async
             const style = document.createElement('style');
             style.innerHTML = `
                 fieldset { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
@@ -238,13 +227,12 @@ const UsuariosModule = (() => {
                 .checkbox-group { display: flex; align-items: center; }
                 .checkbox-group input { margin-right: 0.5rem; }
             `;
-            // Garante que o estilo não seja adicionado múltiplas vezes
             if (!document.head.querySelector('#usuarios-module-style')) {
                 style.id = 'usuarios-module-style';
                 document.head.appendChild(style);
             }
             
-            loadUsers();
+            await loadUsers(); // Chama a função que carrega os dados e esconde o loader
         },
     };
 })();
