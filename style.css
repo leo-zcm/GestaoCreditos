@@ -446,3 +446,18 @@ tbody tr:hover {
     align-items: center;
     gap: 0.5rem;
 }
+
+/* Módulo Comprovantes: Ajuste de colunas da tabela */
+.col-actions {
+    width: 150px; /* Define uma largura mais contida para a coluna de ações */
+    text-align: right;
+}
+
+.col-payment-type {
+    width: 100px;
+    font-weight: 500;
+    color: white;
+    text-align: center;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+    border-radius: 4px;
+}
