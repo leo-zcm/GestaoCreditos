@@ -1,7 +1,6 @@
-// modules/comprovantes.js (VERSÃO FINAL E COMPLETA)
+// modules/comprovantes.js (VERSÃO CORRIGIDA PARA LIDAR COM CLIENTES MANUAIS)
 
 const ComprovantesModule = (() => {
-    // Mapeamento de status do DB para um texto mais amigável e classes de CSS
     const STATUS_MAP = {
         'AGUARDANDO CONFIRMAÇÃO': { text: 'Pendente', class: 'status-pending' },
         'CONFIRMADO': { text: 'Confirmado', class: 'status-confirmed' },
@@ -10,17 +9,15 @@ const ComprovantesModule = (() => {
         'BAIXADO': { text: 'Baixado', class: 'status-cleared' },
     };
 
-    // Estado local do módulo para manter os filtros e o arquivo a ser enviado
     let currentFilters = {
         client_code: '',
         client_name: '',
         start_date: '',
         end_date: '',
-        status: 'CONFIRMADO', // Filtro padrão
+        status: 'CONFIRMADO',
     };
-    let fileToUpload = null; // Armazena o arquivo (colado ou selecionado)
+    let fileToUpload = null;
 
-    // Função principal para carregar e renderizar os comprovantes
     const loadProofs = async () => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
@@ -28,16 +25,18 @@ const ComprovantesModule = (() => {
         listContainer.innerHTML = '<tr><td colspan="7">Buscando...</td></tr>';
 
         try {
+            // ==================================================================
+            // CORREÇÃO 1: Adicionado 'client_name_manual' na consulta SELECT
+            // ==================================================================
             let query = supabase
                 .from('proofs')
                 .select(`
-                    id, created_at, client_code, value, status, proof_url, faturado_pedido_code,
+                    id, created_at, client_code, value, status, proof_url, faturado_pedido_code, client_name_manual,
                     clients_erp ( client_name ),
                     payment_types ( name, color )
                 `)
                 .order('created_at', { ascending: false });
 
-            // Aplicar filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code.toUpperCase());
             if (currentFilters.client_name) query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
@@ -53,7 +52,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // Renderiza as linhas da tabela
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (proofs.length === 0) {
@@ -66,6 +64,14 @@ const ComprovantesModule = (() => {
             const paymentColor = proof.payment_types?.color || 'grey';
             const userPermissions = App.userProfile.permissions?.comprovantes || {};
 
+            // ==================================================================
+            // CORREÇÃO 2: Lógica de fallback para o nome do cliente
+            // Usa o nome da relação se existir, senão usa o nome manual, senão exibe '---'
+            // O '?' (Optional Chaining) previne o erro se 'clients_erp' for null.
+            // O '||' (Logical OR) serve como fallback.
+            // ==================================================================
+            const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
+
             const canEdit = userPermissions.edit && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
             const canConfirm = userPermissions.confirm && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
             const canFaturar = userPermissions.faturar && proof.status === 'CONFIRMADO';
@@ -75,8 +81,8 @@ const ComprovantesModule = (() => {
             return `
                 <tr style="border-left: 4px solid ${paymentColor};">
                     <td>${new Date(proof.created_at).toLocaleDateString()}</td>
-                    <td>${proof.client_code}</td>
-                    <td>${proof.clients_erp.client_name}</td>
+                    <td>${proof.client_code || 'N/A'}</td>
+                    <td>${clientName}</td>
                     <td>${proof.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td>${proof.faturado_pedido_code || '---'}</td>
@@ -95,7 +101,6 @@ const ComprovantesModule = (() => {
         }).join('');
     };
 
-    // Lida com cliques nos botões de ação da tabela
     const handleTableClick = async (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
@@ -118,7 +123,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // Função genérica para atualizar o status
     const updateProofStatus = async (id, newStatus) => {
         App.showLoader();
         try {
@@ -132,9 +136,8 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // MODAL DE NOVO / EDITAR COMPROVANTE
     const renderProofModal = async (proof = null) => {
-        fileToUpload = null; // Reseta o arquivo a cada abertura do modal
+        fileToUpload = null;
         const isNew = proof === null;
         App.showLoader();
 
@@ -160,7 +163,7 @@ const ComprovantesModule = (() => {
                     </div>
                     <div class="form-group">
                         <label for="clientName">Nome do Cliente</label>
-                        <input type="text" id="clientName" value="${proof?.clients_erp?.client_name || ''}" ${proof?.client_code ? 'disabled' : ''}>
+                        <input type="text" id="clientName" value="${proof?.clients_erp?.client_name || proof?.client_name_manual || ''}" ${proof?.client_code ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label for="value">Valor</label>
@@ -194,7 +197,7 @@ const ComprovantesModule = (() => {
             
             const fetchClientName = async () => {
                 const code = clientCodeInput.value.toUpperCase();
-                clientCodeInput.value = code; // Garante que o valor está em maiúsculas
+                clientCodeInput.value = code;
                 if (!code) {
                     clientNameInput.value = '';
                     clientNameInput.disabled = false;
@@ -255,7 +258,7 @@ const ComprovantesModule = (() => {
                 img.src = e.target.result;
                 previewContainer.appendChild(img);
             };
-            reader.readAsDataURL(file);
+            reader.readDataURL(file);
         } else if (file.type === 'application/pdf') {
             previewContainer.innerHTML = `<p><span class="pdf-icon">📄</span> ${file.name}</p>`;
         }
@@ -367,12 +370,10 @@ const ComprovantesModule = (() => {
 
             const remainingValue = originalValue - faturarValue;
 
-            if (remainingValue > 0.009) { // Usar uma pequena tolerância para evitar problemas de ponto flutuante
-                // Lógica de divisão
+            if (remainingValue > 0.009) {
                 const { data: originalProof, error: selectError } = await supabase.from('proofs').select('*').eq('id', proofId).single();
                 if (selectError) throw selectError;
 
-                // 1. Atualiza o registro original para ser o valor faturado
                 const { error: updateError } = await supabase
                     .from('proofs')
                     .update({
@@ -384,8 +385,7 @@ const ComprovantesModule = (() => {
                     .eq('id', proofId);
                 if (updateError) throw updateError;
 
-                // 2. Cria um novo registro com o valor restante
-                delete originalProof.id; // Remove o ID para criar um novo
+                delete originalProof.id;
                 const newProof = {
                     ...originalProof,
                     value: remainingValue,
@@ -399,7 +399,6 @@ const ComprovantesModule = (() => {
                 if (insertError) throw insertError;
 
             } else {
-                // Faturamento total
                 const { error } = await supabase
                     .from('proofs')
                     .update({ status: 'FATURADO', faturado_pedido_code: pedidoCode, updated_at: new Date() })
@@ -418,7 +417,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // Função principal de renderização do módulo
     const render = async () => {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
