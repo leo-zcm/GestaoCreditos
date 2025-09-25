@@ -31,22 +31,48 @@ async function getUserProfile(userId) {
     }
 }
 
-// 3. LÓGICA DE LOGIN (sem alterações)
-loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+// 3. LÓGICA DE LOGIN
+const loginButton = document.getElementById('login-button');
+loginButton.addEventListener('click', async () => {
     showLoader();
     loginError.textContent = '';
     const username = document.getElementById('username').value.toUpperCase();
     const password = document.getElementById('password').value;
+
     try {
+        // 1. Obter o email do usuário
         const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
-        if (rpcError || !email) throw new Error('Usuário não encontrado.');
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email: email, password: password });
-        if (signInError) throw new Error('Usuário ou senha inválidos.');
+        if (rpcError || !email) {
+            throw new Error('Usuário não encontrado.');
+        }
+
+        // 2. Tentar fazer o login
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email: email, password: password });
+        if (signInError) {
+            throw new Error('Usuário ou senha inválidos.');
+        }
+        if (!signInData.user) {
+            throw new Error('Falha na autenticação. Tente novamente.');
+        }
+        
+        // 3. Obter o perfil do usuário
+        const userProfile = await getUserProfile(signInData.user.id);
+        if (!userProfile) {
+            // Se o perfil não for encontrado, desloga para evitar estado inconsistente
+            await supabase.auth.signOut();
+            throw new Error('Não foi possível carregar o perfil do usuário.');
+        }
+
+        // 4. SUCESSO: Inicializar a aplicação diretamente
+        App.init(userProfile);
+        loginScreen.classList.remove('active');
+        appScreen.style.display = 'flex';
+
     } catch (error) {
-        console.error('Erro de login:', error.message);
+        console.error('Erro no processo de login:', error.message);
         loginError.textContent = error.message;
-        hideLoader();
+    } finally {
+        hideLoader(); // Garante que o loader seja escondido em qualquer cenário
     }
 });
 
