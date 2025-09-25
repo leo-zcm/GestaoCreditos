@@ -1,41 +1,17 @@
-// app.js (VERSÃO CORRIGIDA E FINAL)
+// app.js (VERSÃO COMPLETA E CORRIGIDA)
 
-// Objeto principal da aplicação
 const App = {
     userProfile: null,
     initialized: false,
     modules: {
         usuarios: UsuariosModule,
         comprovantes: ComprovantesModule,
-        // creditos: CreditosModule,
-        // solicitacoes: SolicitacoesModule,
     },
-
-    // ==================================================================
-    // CORREÇÃO 1: ORDEM DO MENU E CONFIGURAÇÃO CENTRALIZADA
-    // Usamos um Array para garantir a ordem de exibição no menu e nos widgets.
-    // ==================================================================
     moduleConfig: [
-        {
-            key: 'comprovantes',
-            name: 'Comprovantes',
-            permissionCheck: (user) => user.permissions?.comprovantes?.view
-        },
-        {
-            key: 'creditos',
-            name: 'Créditos',
-            permissionCheck: (user) => user.permissions?.creditos?.view
-        },
-        {
-            key: 'solicitacoes',
-            name: 'Solicitações D/C',
-            permissionCheck: (user) => user.permissions?.solicitacoes?.view
-        },
-        {
-            key: 'usuarios',
-            name: 'Usuários',
-            permissionCheck: (user) => user.is_admin
-        }
+        { key: 'comprovantes', name: 'Comprovantes', permissionCheck: (user) => user.permissions?.comprovantes?.view },
+        { key: 'creditos', name: 'Créditos', permissionCheck: (user) => user.permissions?.creditos?.view },
+        { key: 'solicitacoes', name: 'Solicitações D/C', permissionCheck: (user) => user.permissions?.solicitacoes?.view },
+        { key: 'usuarios', name: 'Usuários', permissionCheck: (user) => user.is_admin }
     ],
 
     isInitialized() {
@@ -67,31 +43,23 @@ const App = {
         const nav = document.getElementById('main-nav');
         let navHtml = '<ul>';
         navHtml += `<li><a href="#" data-module="home" class="nav-link active">Início</a></li>`;
-
-        // Itera sobre o Array de configuração para garantir a ordem
         this.moduleConfig.forEach(config => {
             if (config.permissionCheck(this.userProfile)) {
                 navHtml += `<li><a href="#" data-module="${config.key}" class="nav-link">${config.name}</a></li>`;
             }
         });
-
         navHtml += '</ul>';
         nav.innerHTML = navHtml;
     },
 
-    // ==================================================================
-    // CORREÇÃO 3: CONTROLE DO LOADER CENTRALIZADO
-    // Esta função agora controla o início e o fim do loader, resolvendo o bug.
-    // ==================================================================
     async loadModule(moduleName) {
         this.showLoader();
         try {
             const module = this.modules[moduleName];
             const moduleConf = this.moduleConfig.find(m => m.key === moduleName);
             document.getElementById('header-title').textContent = moduleConf?.name || 'Módulo';
-
             if (module && typeof module.render === 'function') {
-                await module.render(); // Espera a renderização do módulo terminar
+                await module.render();
             } else {
                 console.warn(`Módulo "${moduleName}" não implementado ou não encontrado.`);
                 document.getElementById('content-area').innerHTML = `<div class="card"><p>O módulo <strong>${moduleConf.name}</strong> está em desenvolvimento.</p></div>`;
@@ -100,18 +68,14 @@ const App = {
             console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
             document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro grave ao carregar este módulo.</div>`;
         } finally {
-            this.hideLoader(); // Garante que o loader seja escondido, não importa o que aconteça.
+            this.hideLoader();
         }
     },
 
-    // ==================================================================
-    // CORREÇÃO 2: WIDGETS DA HOME RESTAURADOS
-    // ==================================================================
     renderHome() {
         this.showLoader();
         document.getElementById('header-title').textContent = 'Início';
         const contentArea = document.getElementById('content-area');
-        
         let widgetsHtml = this.moduleConfig
             .filter(config => config.permissionCheck(this.userProfile))
             .map(config => `
@@ -120,7 +84,6 @@ const App = {
                     <p>Acessar o módulo de ${config.name.toLowerCase()}.</p>
                 </div>
             `).join('');
-
         contentArea.innerHTML = `
             <div class="card">
                 <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
@@ -130,8 +93,6 @@ const App = {
                 ${widgetsHtml || '<p>Você não tem permissão para acessar nenhum módulo.</p>'}
             </div>
         `;
-
-        // Adiciona estilo para os widgets (opcional, mas recomendado)
         const styleId = 'home-widgets-style';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
@@ -144,28 +105,21 @@ const App = {
             `;
             document.head.appendChild(style);
         }
-
-        // Adiciona eventos de clique para os widgets
         document.querySelectorAll('.home-widget').forEach(widget => {
             widget.addEventListener('click', () => {
                 const moduleName = widget.dataset.module;
-                // Simula o clique no link do menu correspondente
                 const navLink = document.querySelector(`#main-nav a[data-module="${moduleName}"]`);
-                if (navLink) {
-                    navLink.click();
-                }
+                if (navLink) navLink.click();
             });
         });
-
         this.hideLoader();
     },
 
+    // CÓDIGO COMPLETO RESTAURADO
     setupEventListeners() {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
-    
         menuToggle.addEventListener('click', () => sidebar.classList.toggle('active'));
-    
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
@@ -176,7 +130,6 @@ const App = {
                 else this.loadModule(moduleName);
             }
         });
-        
         const modalContainer = document.getElementById('modal-container');
         modalContainer.addEventListener('click', (e) => {
             if (e.target === modalContainer || e.target.classList.contains('modal-close-btn')) {
@@ -187,3 +140,7 @@ const App = {
             }
         });
     },
+
+    showLoader() { document.getElementById('loader').classList.add('active'); },
+    hideLoader() { document.getElementById('loader').classList.remove('active'); },
+};
