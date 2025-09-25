@@ -1,4 +1,4 @@
-// auth.js (VERSÃO CORRIGIDA)
+// auth.js (VERSÃO CORRIGIDA E CENTRALIZADA)
 
 // 1. CONFIGURAÇÃO DO SUPABASE (imutável)
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
@@ -27,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Seletores de elementos do DOM
     const loginScreen = document.getElementById('login-screen');
     const appScreen = document.getElementById('app-screen');
+    const loginForm = document.getElementById('login-form');
     const loginButton = document.getElementById('login-button');
     const logoutButton = document.getElementById('logout-button');
     const loginError = document.getElementById('login-error');
@@ -35,105 +36,112 @@ document.addEventListener('DOMContentLoaded', () => {
     const showLoader = () => loader.classList.add('active');
     const hideLoader = () => loader.classList.remove('active');
 
+    // Função para transicionar para a tela da aplicação
+    const showAppScreen = () => {
+        loginScreen.classList.remove('active');
+        appScreen.classList.add('active'); // Usar classe para consistência
+    };
+
+    // Função para transicionar para a tela de login
+    const showLoginScreen = () => {
+        appScreen.classList.remove('active');
+        loginScreen.classList.add('active');
+    };
+
     // LÓGICA DE LOGIN
-    loginButton.addEventListener('click', async () => {
+    const handleLogin = async (event) => {
+        // Previne o envio do formulário se o evento for de submit
+        if(event) event.preventDefault(); 
+        
         showLoader();
         loginError.textContent = '';
         const username = document.getElementById('username').value.toUpperCase();
         const password = document.getElementById('password').value;
 
+        if (!username || !password) {
+            loginError.textContent = 'Usuário e senha são obrigatórios.';
+            hideLoader();
+            return;
+        }
+
         try {
-            const { data: email, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
-            if (rpcError || !email) throw new Error('Usuário não encontrado.');
+            // Usamos um RPC para obter o email a partir do username (case-insensitive)
+            const { data: emailData, error: rpcError } = await supabase.rpc('get_email_by_username', { p_username: username });
+            if (rpcError || !emailData) {
+                // Se o RPC falhar ou não retornar dados, o usuário não existe.
+                throw new Error('Usuário não encontrado.');
+            }
+            const email = emailData;
 
+            // Tentativa de login com o email obtido e a senha
             const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-            if (signInError) throw new Error('Usuário ou senha inválidos.');
-            if (!signInData.user) throw new Error('Falha na autenticação.');
-
-            const userProfile = await getUserProfile(signInData.user.id);
-            if (!userProfile) {
-                await supabase.auth.signOut();
-                throw new Error('Não foi possível carregar o perfil do usuário.');
+            if (signInError) {
+                // Erro de senha incorreta ou outro problema de autenticação
+                throw new Error('Usuário ou senha inválidos.');
+            }
+            if (!signInData.user) {
+                throw new Error('Falha na autenticação. Tente novamente.');
             }
 
-            App.init(userProfile);
-            loginScreen.classList.remove('active');
-            appScreen.style.display = 'flex';
+            // O onAuthStateChange vai lidar com a inicialização do app após o login bem-sucedido.
+            // Não precisamos fazer mais nada aqui, pois o evento 'SIGNED_IN' será disparado.
 
         } catch (error) {
             console.error('Erro no processo de login:', error.message);
             loginError.textContent = error.message;
-        } finally {
-            hideLoader();
+            hideLoader(); // Esconde o loader apenas em caso de erro aqui
         }
-    });
+    };
+
+    loginButton.addEventListener('click', handleLogin);
+    loginForm.addEventListener('submit', handleLogin); // Permite login com Enter
 
     // LÓGICA DE LOGOUT
     logoutButton.addEventListener('click', async () => {
         showLoader();
         await supabase.auth.signOut();
-        window.location.reload();
+        // O onAuthStateChange vai lidar com a transição de tela após o logout.
     });
 
-    // GERENCIADOR DE ESTADO DE AUTENTICAÇÃO
+    // ==================================================================
+    // PONTO ÚNICO E CENTRAL DE GERENCIAMENTO DE SESSÃO
+    // ==================================================================
     supabase.auth.onAuthStateChange(async (event, session) => {
-        if (event === 'INITIAL_SESSION') {
-            showLoader();
+        console.log(`Auth event: ${event}`);
+        showLoader();
+
+        // Se existe uma sessão válida (seja no carregamento inicial ou após login)
+        if (session && session.user) {
             try {
-                if (session && session.user) {
+                // Verifica se o App já foi inicializado para evitar chamadas duplicadas
+                if (!App.isInitialized()) {
                     const userProfile = await getUserProfile(session.user.id);
                     if (userProfile) {
-                        App.init(userProfile);
-                        loginScreen.classList.remove('active');
-                        appScreen.style.display = 'flex';
+                        App.init(userProfile); // Inicializa o App com os dados do perfil
+                        showAppScreen();
                     } else {
-                        throw new Error("Sessão de usuário inválida.");
+                        // Caso crítico: usuário autenticado mas sem perfil no banco
+                        await supabase.auth.signOut();
+                        throw new Error("Perfil de usuário não encontrado. Deslogando.");
                     }
                 } else {
-                    // Nenhuma sessão válida
-                    appScreen.style.display = 'none';
-                    loginScreen.classList.add('active');
+                    // Se o app já está inicializado, apenas garante que a tela correta está visível
+                    showAppScreen();
                 }
             } catch (error) {
-                console.error("Erro ao verificar sessão:", error.message);
-                appScreen.style.display = 'none';
-                loginScreen.classList.add('active');
+                console.error("Erro ao processar sessão:", error.message);
+                showLoginScreen();
             } finally {
                 hideLoader();
             }
         } 
-        else if (event === 'SIGNED_IN') {
-            showLoader();
-            try {
-                if (session && session.user) {
-                    const userProfile = await getUserProfile(session.user.id);
-                    if (userProfile) {
-                        App.init(userProfile);
-                        loginScreen.classList.remove('active');
-                        appScreen.style.display = 'flex';
-                    }
-                }
-            } finally {
-                hideLoader();
-            }
-        } 
-        else if (event === 'SIGNED_OUT') {
-            appScreen.style.display = 'none';
-            loginScreen.classList.add('active');
+        // Se não há sessão (seja no carregamento inicial, após logout ou token expirado)
+        else {
+            App.destroy(); // Limpa o estado do App
+            showLoginScreen();
             hideLoader();
         }
     });
 
-    // VERIFICAR SESSÃO AO VOLTAR PARA A ABA
-    document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'visible') {
-            const { data, error } = await supabase.auth.getSession();
-            if (!data.session) {
-                // Se não há sessão, volta pro login
-                appScreen.style.display = 'none';
-                loginScreen.classList.add('active');
-                hideLoader();
-            }
-        }
-    });
+    // REMOVIDO o listener de 'visibilitychange', pois a biblioteca do Supabase já lida com isso.
 });
