@@ -1,4 +1,4 @@
-// auth.js (VERSÃO FINAL E ROBUSTA CONTRA LOOP DE CARREGAMENTO)
+// auth.js (VERSÃO DEFINITIVA CONTRA RACE CONDITIONS E OSCILAÇÃO)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
@@ -30,16 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const showLoader = () => loader.classList.add('active');
     const hideLoader = () => loader.classList.remove('active');
-
-    const showAppScreen = () => {
-        loginScreen.classList.remove('active');
-        appScreen.classList.add('active');
-    };
-
-    const showLoginScreen = () => {
-        appScreen.classList.remove('active');
-        loginScreen.classList.add('active');
-    };
+    const showAppScreen = () => { loginScreen.classList.remove('active'); appScreen.classList.add('active'); };
+    const showLoginScreen = () => { appScreen.classList.remove('active'); loginScreen.classList.add('active'); };
 
     const usernameInput = document.getElementById('username');
     const passwordInput = document.getElementById('password');
@@ -78,24 +70,56 @@ document.addEventListener('DOMContentLoaded', () => {
         await supabase.auth.signOut();
     });
 
+    // ==================================================================
+    // LÓGICA DE AUTENTICAÇÃO À PROVA DE FALHAS
+    // ==================================================================
+    let isHandlingAuthChange = false; // O "Guarda" para prevenir condições de corrida
+
     supabase.auth.onAuthStateChange(async (event, session) => {
-        showLoader();
-        if (!session) {
-            App.destroy();
-            showLoginScreen();
-            hideLoader();
+        // Se a função já está rodando, ignora esta nova chamada.
+        if (isHandlingAuthChange) {
+            console.log(`Auth event [${event}] ignorado por estar em andamento.`);
             return;
         }
-        const userProfile = await getUserProfile(session.user.id);
-        if (userProfile) {
-            if (!App.isInitialized()) {
-                App.init(userProfile);
+        
+        isHandlingAuthChange = true; // "Tranca" a função
+        showLoader();
+
+        try {
+            // Evento de refresh de token ao voltar para a aba. Não requer ação na UI.
+            if (event === 'TOKEN_REFRESHED') {
+                console.log("Token atualizado. Nenhuma ação de UI necessária.");
+                return; // Simplesmente sai, mantendo o app como está.
             }
-            showAppScreen();
-            hideLoader();
-        } else {
-            console.error("Sessão válida mas perfil não encontrado. Forçando logout.");
+
+            if (event === 'SIGNED_OUT' || !session) {
+                App.destroy();
+                showLoginScreen();
+                return;
+            }
+
+            // Para INITIAL_SESSION ou SIGNED_IN, validamos e iniciamos o app.
+            if (session.user) {
+                const userProfile = await getUserProfile(session.user.id);
+
+                if (userProfile) {
+                    if (!App.isInitialized()) {
+                        App.init(userProfile);
+                    }
+                    showAppScreen();
+                } else {
+                    // Sessão existe mas o perfil não foi encontrado. Força logout.
+                    console.error("Sessão válida mas perfil não encontrado. Forçando logout.");
+                    await supabase.auth.signOut();
+                }
+            }
+        } catch (error) {
+            console.error("Erro crítico no onAuthStateChange, forçando logout:", error);
             await supabase.auth.signOut();
+        } finally {
+            // SEMPRE esconde o loader e "destranca" a função no final.
+            hideLoader();
+            isHandlingAuthChange = false;
         }
     });
 });
