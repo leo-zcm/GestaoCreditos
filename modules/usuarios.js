@@ -111,12 +111,9 @@ const UsuariosModule = (() => {
             newPermissions[moduleKey] = {};
             for (const permKey in ALL_PERMISSIONS[moduleKey].perms) {
                 const input = form[`perm-${moduleKey}-${permKey}`];
-                if(input) { // Checa se o elemento existe
-                    if (input.type === 'checkbox') {
-                        newPermissions[moduleKey][permKey] = input.checked;
-                    } else if (input.tagName === 'SELECT') {
-                        newPermissions[moduleKey][permKey] = input.value;
-                    }
+                if(input) {
+                    if (input.type === 'checkbox') newPermissions[moduleKey][permKey] = input.checked;
+                    else if (input.tagName === 'SELECT') newPermissions[moduleKey][permKey] = input.value;
                 }
             }
         }
@@ -124,18 +121,32 @@ const UsuariosModule = (() => {
         try {
             const profileData = { full_name: fullName, roles: selectedRoles, permissions: newPermissions };
 
-            if (userId) {
+            if (userId) { // Editando um usuário existente (lógica inalterada)
                 const { error } = await supabase.from('profiles').update(profileData).eq('id', userId);
                 if (error) throw error;
-            } else {
+            } else { 
+                // Criando um novo usuário (lógica do malabarismo de sessão)
+                
+                // 1. SALVA A SESSÃO ATUAL DO ADMIN
+                const { data: { session: adminSession } } = await supabase.auth.getSession();
+                if (!adminSession) throw new Error("Sessão de administrador perdida. Por favor, recarregue a página.");
+
+                // 2. CRIA O NOVO USUÁRIO
+                // Isso vai trocar a sessão ativa para a do novo usuário
                 const password = form.password.value;
                 const email = `${username.toLowerCase()}@zcm.local`;
-                const { data: authData, error: signUpError } = await supabase.auth.signUp({ email, password });
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
                 if (signUpError) throw signUpError;
                 
+                // 3. ATUALIZA O PERFIL DO NOVO USUÁRIO
                 profileData.username = username;
-                const { error: profileError } = await supabase.from('profiles').update(profileData).eq('id', authData.user.id);
+                const { error: profileError } = await supabase.from('profiles').update(profileData).eq('id', signUpData.user.id);
                 if (profileError) throw profileError;
+
+                // 4. AQUI ESTÁ A MÁGICA: RESTAURA A SESSÃO DO ADMIN
+                // Isso desloga o novo usuário e restaura o estado original da aplicação
+                const { error: sessionError } = await supabase.auth.setSession(adminSession);
+                if (sessionError) throw sessionError;
             }
 
             document.getElementById('modal-container').classList.remove('active');
