@@ -1,6 +1,5 @@
 // auth.js (VERSÃO FINAL E ROBUSTA CONTRA LOOP DE CARREGAMENTO)
 
-// 1. CONFIGURAÇÃO DO SUPABASE (imutável)
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
 const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -79,34 +78,24 @@ document.addEventListener('DOMContentLoaded', () => {
         await supabase.auth.signOut();
     });
 
-    // PONTO ÚNICO E CENTRAL DE GERENCIAMENTO DE SESSÃO - LÓGICA REFINADA
     supabase.auth.onAuthStateChange(async (event, session) => {
         showLoader();
-
         if (!session) {
             App.destroy();
             showLoginScreen();
             hideLoader();
             return;
         }
-
-        // Se há uma sessão, SEMPRE validamos o perfil antes de mostrar o app
         const userProfile = await getUserProfile(session.user.id);
-
         if (userProfile) {
-            // SUCESSO: Temos uma sessão e um perfil válido
             if (!App.isInitialized()) {
                 App.init(userProfile);
             }
             showAppScreen();
             hideLoader();
         } else {
-            // FALHA: Sessão existe mas o perfil não foi encontrado (ex: usuário deletado)
-            // A melhor ação é deslogar o usuário para limpar a sessão inválida.
             console.error("Sessão válida mas perfil não encontrado. Forçando logout.");
             await supabase.auth.signOut();
-            // O evento 'SIGNED_OUT' será disparado, e o bloco `if (!session)` acima
-            // cuidará de mostrar a tela de login e esconder o loader.
         }
     });
 });
