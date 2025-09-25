@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO COM BUSCA CORRIGIDA E NOVA COLUNA)
+// modules/comprovantes.js (VERSÃO FINAL COM BUSCA RPC)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -22,41 +22,48 @@ const ComprovantesModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
-        listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>'; // Colspan atualizado para 8
+        listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>';
 
         try {
-            let query = supabase
+            // ==================================================================
+            // CORREÇÃO PRINCIPAL: USANDO RPC PARA A BUSCA
+            // 1. Chamamos a função no Supabase com os filtros.
+            // ==================================================================
+            const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
+                p_status: currentFilters.status,
+                p_client_code: currentFilters.client_code,
+                p_name_search: currentFilters.client_name
+            });
+
+            if (rpcError) throw rpcError;
+
+            // Se a busca não retornar nenhum ID, encerramos aqui.
+            if (!idObjects || idObjects.length === 0) {
+                renderTable([]);
+                return;
+            }
+
+            // 2. Extraímos os IDs do resultado da RPC.
+            const proofIds = idObjects.map(item => item.id);
+
+            // 3. Buscamos os dados completos apenas para os IDs encontrados.
+            const { data: proofs, error: selectError } = await supabase
                 .from('proofs')
                 .select(`
                     id, created_at, client_code, value, status, proof_url, faturado_pedido_code, client_name_manual,
                     clients_erp ( client_name ),
                     payment_types ( name, color )
                 `)
+                .in('id', proofIds) // O filtro principal agora é aqui
                 .order('created_at', { ascending: false });
 
-            // ==================================================================
-            // CORREÇÃO 1: LÓGICA DE BUSCA REFINADA
-            // Os filtros agora só são aplicados se os campos tiverem valor.
-            // A busca por nome agora considera tanto clientes com código quanto manuais.
-            // ==================================================================
-            if (currentFilters.status) {
-                query = query.eq('status', currentFilters.status);
-            }
-            if (currentFilters.client_code) {
-                query = query.eq('client_code', currentFilters.client_code.toUpperCase());
-            }
-            if (currentFilters.client_name) {
-                const searchTerm = `%${currentFilters.client_name}%`;
-                // Usa o filtro OR para buscar em qualquer um dos campos de nome
-                query = query.or(`client_name_manual.ilike.${searchTerm},clients_erp.client_name.ilike.${searchTerm}`);
-            }
+            if (selectError) throw selectError;
 
-            const { data: proofs, error } = await query;
-            if (error) throw error;
             renderTable(proofs);
+
         } catch (error) {
             console.error("Erro ao carregar comprovantes:", error);
-            listContainer.innerHTML = `<tr><td colspan="8" class="error-message">Falha ao carregar dados.</td></tr>`; // Colspan atualizado
+            listContainer.innerHTML = `<tr><td colspan="8" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
         } finally {
             App.hideLoader();
         }
@@ -65,7 +72,7 @@ const ComprovantesModule = (() => {
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (proofs.length === 0) {
-            listContainer.innerHTML = '<tr><td colspan="8">Nenhum resultado encontrado.</td></tr>'; // Colspan atualizado
+            listContainer.innerHTML = '<tr><td colspan="8">Nenhum resultado encontrado.</td></tr>';
             return;
         }
 
@@ -97,14 +104,9 @@ const ComprovantesModule = (() => {
                     <td>${proof.client_code || 'N/A'}</td>
                     <td>${clientName}</td>
                     <td>${proof.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    
-                    <!-- CORREÇÃO 2: Nova coluna de Tipo de Pagamento com estilo dinâmico -->
                     <td class="col-payment-type" style="background-color: ${paymentType.color};">${paymentType.name}</td>
-                    
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td>${proof.faturado_pedido_code || '---'}</td>
-                    
-                    <!-- CORREÇÃO 3: Classe aplicada para controlar a largura da coluna -->
                     <td class="col-actions">
                         <div class="action-buttons">
                             ${actions.view ? `<a href="${proof.proof_url}" target="_blank" class="btn btn-secondary btn-sm">Ver</a>` : ''}
