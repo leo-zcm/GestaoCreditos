@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO 100% COMPLETA E CORRIGIDA)
+// modules/comprovantes.js (VERSÃO 100% COMPLETA, SEM OMISSÕES E COM PASTE GLOBAL)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -11,14 +11,13 @@ const ComprovantesModule = (() => {
 
     let currentFilters = { client_code: '', client_name: '', status: 'CONFIRMADO' };
     let fileToUpload = null;
-    let documentPasteHandler = null; // Guarda a referência do listener de paste
+    let documentPasteHandler = null;
 
     const loadProofs = async () => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
         listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>';
-
         try {
             const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
                 p_status: currentFilters.status,
@@ -108,18 +107,15 @@ const ComprovantesModule = (() => {
         cleanupModalListeners();
         const isNew = proof === null;
         App.showLoader();
-
         try {
             const { data: paymentTypes, error } = await supabase.from('payment_types').select('*');
             if (error) throw error;
-
             const paymentTypesHtml = paymentTypes.map(pt => `
                 <div class="payment-type-radio">
                     <input type="radio" id="pt-${pt.id}" name="payment_type" value="${pt.id}" ${proof?.payment_type_id === pt.id ? 'checked' : ''} required>
                     <label for="pt-${pt.id}">${pt.name}</label>
                 </div>
             `).join('');
-
             const modalBody = document.getElementById('modal-body');
             modalBody.innerHTML = `
                 <h2>${isNew ? 'Novo Pagamento' : 'Editar Pagamento'}</h2>
@@ -159,7 +155,6 @@ const ComprovantesModule = (() => {
                     <button type="submit" class="btn btn-primary">${isNew ? 'Salvar Pagamento' : 'Salvar Alterações'}</button>
                 </form>
             `;
-
             const clientCodeInput = document.getElementById('clientCode');
             const clientNameInput = document.getElementById('clientName');
             const fetchClientName = async () => {
@@ -175,18 +170,14 @@ const ComprovantesModule = (() => {
                 clientNameInput.disabled = !!data;
             };
             clientCodeInput.addEventListener('blur', fetchClientName);
-
             const dropArea = document.getElementById('file-drop-area');
             const fileInput = document.getElementById('file-input');
             dropArea.addEventListener('click', () => fileInput.click());
             fileInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
-
             documentPasteHandler = (e) => handlePaste(e);
             document.addEventListener('paste', documentPasteHandler);
-
             document.getElementById('proof-form').addEventListener('submit', handleProofSubmit);
             document.getElementById('modal-container').classList.add('active');
-
         } catch (error) {
             console.error("Erro ao renderizar modal de comprovante:", error);
             alert('Falha ao abrir o formulário.');
@@ -311,7 +302,7 @@ const ComprovantesModule = (() => {
             App.hideLoader();
         }
     };
-    
+
     const renderFaturarModal = async (proofId) => {
         App.showLoader();
         try {
@@ -429,7 +420,7 @@ const ComprovantesModule = (() => {
         document.getElementById('proofs-list').addEventListener('click', handleTableClick);
         await loadProofs();
     };
-
+    
     return {
         name: 'Comprovantes',
         render,
