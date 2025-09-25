@@ -1,7 +1,7 @@
-// auth.js (VERSÃO DEFINITIVA CONTRA RACE CONDITIONS E OSCILAÇÃO)
+// auth.js (VERSÃO FINAL - ESTRUTURA FUNCIONAL + PROTEÇÃO CONTRA RACE CONDITION)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgylMzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
 const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 async function getUserProfile(userId) {
@@ -71,14 +71,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ==================================================================
-    // LÓGICA DE AUTENTICAÇÃO À PROVA DE FALHAS
+    // PONTO ÚNICO E CENTRAL DE GERENCIAMENTO DE SESSÃO (VERSÃO ROBUSTA)
     // ==================================================================
     let isHandlingAuthChange = false; // O "Guarda" para prevenir condições de corrida
 
     supabase.auth.onAuthStateChange(async (event, session) => {
         // Se a função já está rodando, ignora esta nova chamada.
         if (isHandlingAuthChange) {
-            console.log(`Auth event [${event}] ignorado por estar em andamento.`);
+            console.log(`Auth event [${event}] ignorado por já estar em andamento.`);
             return;
         }
         
@@ -86,33 +86,37 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoader();
 
         try {
-            // Evento de refresh de token ao voltar para a aba. Não requer ação na UI.
+            // Evento de refresh de token (ao voltar para a aba). Não requer ação na UI.
             if (event === 'TOKEN_REFRESHED') {
                 console.log("Token atualizado. Nenhuma ação de UI necessária.");
-                return; // Simplesmente sai, mantendo o app como está.
+                // Simplesmente sai, mantendo o app como está.
+                return;
             }
 
-            if (event === 'SIGNED_OUT' || !session) {
-                App.destroy();
+            // Se não há sessão (seja no carregamento inicial, após logout ou token expirado)
+            if (!session || !session.user) {
+                App.destroy(); // Limpa o estado do App
                 showLoginScreen();
                 return;
             }
 
-            // Para INITIAL_SESSION ou SIGNED_IN, validamos e iniciamos o app.
-            if (session.user) {
+            // Se chegamos aqui, temos uma sessão. Vamos validar e iniciar o app.
+            // A verificação !App.isInitialized() é a chave para evitar re-inicializações desnecessárias.
+            if (!App.isInitialized()) {
                 const userProfile = await getUserProfile(session.user.id);
-
                 if (userProfile) {
-                    if (!App.isInitialized()) {
-                        App.init(userProfile);
-                    }
-                    showAppScreen();
+                    App.init(userProfile); // Inicializa o App com os dados do perfil
                 } else {
-                    // Sessão existe mas o perfil não foi encontrado. Força logout.
-                    console.error("Sessão válida mas perfil não encontrado. Forçando logout.");
+                    // Caso crítico: usuário autenticado mas sem perfil no banco. Força logout.
+                    console.error("Perfil de usuário não encontrado. Deslogando.");
                     await supabase.auth.signOut();
+                    return; // Sai da função, o evento SIGNED_OUT cuidará do resto.
                 }
             }
+            
+            // Após a inicialização (ou se já estava inicializado), garante que a tela correta está visível.
+            showAppScreen();
+
         } catch (error) {
             console.error("Erro crítico no onAuthStateChange, forçando logout:", error);
             await supabase.auth.signOut();
