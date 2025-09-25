@@ -58,7 +58,7 @@ logoutButton.addEventListener('click', async () => {
 });
 
 
-* 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (VERSÃO FINAL E ROBUSTA)
+/* 5. GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (VERSÃO FINAL E ROBUSTA)
  * Previne o loop de carregamento envolvendo a lógica em um try/catch/finally
  * para garantir que o loader seja sempre escondido, mesmo em caso de erro.
  */
