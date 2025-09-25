@@ -1,4 +1,4 @@
-// app.js (VERSÃO CORRIGIDA E REFATORADA)
+// app.js (VERSÃO CORRIGIDA E FINAL)
 
 // Objeto principal da aplicação
 const App = {
@@ -9,6 +9,15 @@ const App = {
         usuarios: UsuariosModule,
         // Adicione outros módulos aqui no futuro
         // creditos: CreditosModule, 
+        // comprovantes: ComprovantesModule,
+    },
+
+    // Mapeamento de módulos para suas permissões de visualização
+    modulePermissions: {
+        usuarios: (user) => user.is_admin,
+        creditos: (user) => user.permissions?.creditos?.view,
+        comprovantes: (user) => user.permissions?.comprovantes?.view,
+        solicitacoes: (user) => user.permissions?.solicitacoes?.view,
     },
 
     // Verifica se o app já foi inicializado
@@ -45,6 +54,9 @@ const App = {
         this.buildNavigation();
     },
 
+    // ==================================================================
+    // CORREÇÃO 1: LÓGICA DE NAVEGAÇÃO DINÂMICA
+    // ==================================================================
     // Constrói o menu de navegação com base nas permissões do usuário
     buildNavigation() {
         const nav = document.getElementById('main-nav');
@@ -53,40 +65,46 @@ const App = {
         // Link Fixo para Home/Início
         navHtml += `<li><a href="#" data-module="home" class="nav-link active">Início</a></li>`;
 
-        // Adiciona módulos com base nas permissões
-        // Exemplo: Módulo de Usuários visível apenas para admins
-        if (this.userProfile.is_admin) {
-             navHtml += `<li><a href="#" data-module="usuarios" class="nav-link">Usuários</a></li>`;
+        // Itera sobre as permissões de módulo para construir o menu
+        for (const moduleName in this.modulePermissions) {
+            const hasPermission = this.modulePermissions[moduleName](this.userProfile);
+            
+            if (hasPermission) {
+                // Tenta obter o nome do módulo do objeto do módulo, se existir
+                const moduleDisplayName = this.modules[moduleName]?.name || 
+                                          moduleName.charAt(0).toUpperCase() + moduleName.slice(1); // Fallback
+                navHtml += `<li><a href="#" data-module="${moduleName}" class="nav-link">${moduleDisplayName}</a></li>`;
+            }
         }
-
-        // Adicione outras verificações de permissão para outros módulos aqui
-        // if (this.userProfile.permissions?.creditos?.view) {
-        //     navHtml += `<li><a href="#" data-module="creditos" class="nav-link">Créditos</a></li>`;
-        // }
 
         navHtml += '</ul>';
         nav.innerHTML = navHtml;
     },
 
+    // ==================================================================
+    // CORREÇÃO 2: GERENCIAMENTO DE LOADER SIMPLIFICADO
+    // ==================================================================
     // Carrega o conteúdo de um módulo na área principal
-    loadModule(moduleName) {
-        this.showLoader();
-        document.getElementById('header-title').textContent = this.modules[moduleName]?.name || 'Módulo não encontrado';
+    async loadModule(moduleName) {
+        this.showLoader(); // Apenas MOSTRA o loader. O módulo é responsável por escondê-lo.
         
         const module = this.modules[moduleName];
         if (module && typeof module.render === 'function') {
+            document.getElementById('header-title').textContent = module.name || 'Módulo';
             try {
-                module.render(); // O próprio módulo deve gerenciar seu loader interno se precisar
+                // A função render do módulo agora é responsável por todo o fluxo,
+                // incluindo esconder o loader quando terminar.
+                await module.render(); 
             } catch (error) {
                 console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
                 document.getElementById('content-area').innerHTML = `<p class="error-message">Ocorreu um erro ao carregar este módulo.</p>`;
+                this.hideLoader(); // Esconde o loader em caso de erro na renderização
             }
         } else {
             console.warn(`Módulo "${moduleName}" não encontrado ou não possui um método render.`);
-            document.getElementById('content-area').innerHTML = ''; // Limpa a área
+            document.getElementById('content-area').innerHTML = `<p>Módulo em desenvolvimento.</p>`;
+            this.hideLoader(); // Esconde o loader se o módulo não for encontrado
         }
-        // O loader principal é escondido pelo próprio módulo ou aqui se a operação for síncrona
-        if(moduleName !== 'usuarios') this.hideLoader();
     },
 
     // Renderiza o conteúdo da tela inicial
@@ -98,7 +116,6 @@ const App = {
             <div class="card">
                 <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
                 <p>Selecione uma opção no menu ao lado para começar.</p>
-                <!-- Aqui você pode adicionar gráficos, estatísticas rápidas, etc. -->
             </div>
         `;
         this.hideLoader();
@@ -109,17 +126,14 @@ const App = {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
 
-        // Toggle do menu lateral em telas menores
         menuToggle.addEventListener('click', () => {
             sidebar.classList.toggle('active');
         });
 
-        // Navegação principal (delegação de evento)
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
                 
-                // Atualiza o link ativo
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
 
@@ -132,7 +146,6 @@ const App = {
             }
         });
         
-        // Fechar modal
         const modalContainer = document.getElementById('modal-container');
         modalContainer.addEventListener('click', (e) => {
             if (e.target === modalContainer || e.target.classList.contains('modal-close-btn')) {
@@ -150,6 +163,3 @@ const App = {
         document.getElementById('loader').classList.remove('active');
     },
 };
-
-// REMOVIDO: O listener de DOMContentLoaded foi movido e centralizado no auth.js
-// A aplicação agora espera ser iniciada pela chamada App.init() do auth.js
