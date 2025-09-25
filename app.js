@@ -6,8 +6,7 @@ const App = {
     initialized: false,
     modules: {
         usuarios: UsuariosModule,
-        // Adicione os objetos dos outros módulos aqui quando criá-los
-        // comprovantes: ComprovantesModule,
+        comprovantes: ComprovantesModule,
         // creditos: CreditosModule,
         // solicitacoes: SolicitacoesModule,
     },
