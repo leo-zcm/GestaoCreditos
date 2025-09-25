@@ -1,7 +1,7 @@
-// modules/usuarios.js (VERSÃO CORRIGIDA E FINAL)
+// modules/usuarios.js (VERSÃO CORRIGIDA E SIMPLIFICADA)
 
 const UsuariosModule = (() => {
-    // Modelo de todas as permissões possíveis na plataforma
+    // ... (O conteúdo de ALL_PERMISSIONS e ALL_ROLES permanece o mesmo)
     const ALL_PERMISSIONS = {
         comprovantes: {
             label: 'Comprovantes',
@@ -25,10 +25,10 @@ const UsuariosModule = (() => {
             }
         }
     };
-    
     const ALL_ROLES = ['VENDEDOR', 'CAIXA', 'FINANCEIRO', 'FATURISTA', 'GARANTIA'];
 
     const renderUserModal = (user = null) => {
+        // ... (Esta função inteira permanece a mesma, sem alterações)
         const modalBody = document.getElementById('modal-body');
         const isNewUser = user === null;
         const userPerms = user?.permissions || {};
@@ -97,10 +97,11 @@ const UsuariosModule = (() => {
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
-        App.showLoader(); // Usa o loader global
+        // REMOVIDO: App.showLoader();
         document.getElementById('modal-error').textContent = '';
         
         const form = e.target;
+        // ... (lógica interna do formulário permanece a mesma)
         const userId = form.userId.value;
         const fullName = form.fullName.value;
         const username = form.username.value.toUpperCase();
@@ -120,42 +121,35 @@ const UsuariosModule = (() => {
 
         try {
             const profileData = { full_name: fullName, roles: selectedRoles, permissions: newPermissions };
-
             if (userId) {
                 const { error } = await supabase.from('profiles').update(profileData).eq('id', userId);
                 if (error) throw error;
             } else { 
                 const { data: { session: adminSession } } = await supabase.auth.getSession();
                 if (!adminSession) throw new Error("Sessão de administrador perdida. Por favor, recarregue a página.");
-
                 const password = form.password.value;
                 const email = `${username.toLowerCase()}@zcm.local`;
                 const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
                 if (signUpError) throw signUpError;
-                
                 profileData.username = username;
                 const { error: profileError } = await supabase.from('profiles').update(profileData).eq('id', signUpData.user.id);
                 if (profileError) throw profileError;
-
                 const { error: sessionError } = await supabase.auth.setSession(adminSession);
                 if (sessionError) throw sessionError;
             }
-
             document.getElementById('modal-container').classList.remove('active');
-            await loadUsers(); // Recarrega a lista de usuários
+            await loadUsers();
         } catch (error) {
             console.error('Erro ao salvar usuário:', error.message);
             document.getElementById('modal-error').textContent = error.message;
+            // Lançamos o erro para que o App.loadModule possa capturá-lo se necessário
+            throw error; 
         } finally {
-            App.hideLoader(); // Esconde o loader global
+            // REMOVIDO: App.hideLoader();
         }
     };
 
-    // ==================================================================
-    // CORREÇÃO 3: MÓDULO AGORA GERENCIA O LOADER CORRETAMENTE
-    // ==================================================================
     const loadUsers = async () => {
-        // O loader já foi ativado pelo App.loadModule, não precisa chamar App.showLoader() aqui.
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
             <div class="card">
@@ -178,61 +172,60 @@ const UsuariosModule = (() => {
                 </div>
             </div>`;
 
-        try {
-            const { data: users, error } = await supabase
-                .from('profiles')
-                .select('*')
-                .order('full_name', { ascending: true });
+        // O try/catch foi removido daqui e movido para App.loadModule para centralizar o tratamento de erro.
+        // Se ocorrer um erro na busca do supabase, a promessa será rejeitada e o catch no App.loadModule irá lidar com isso.
+        const { data: users, error } = await supabase
+            .from('profiles')
+            .select('*')
+            .order('full_name', { ascending: true });
 
-            if (error) throw error;
-
-            const usersList = document.getElementById('users-list');
-            usersList.innerHTML = users.map(user => `
-                <tr>
-                    <td>${user.full_name}</td>
-                    <td>${user.username}</td>
-                    <td>${user.roles ? user.roles.join(', ') : 'Nenhuma'}</td>
-                    <td>
-                        <button class="btn btn-secondary btn-sm btn-edit-user" data-user-id="${user.id}">Editar</button>
-                    </td>
-                </tr>
-            `).join('');
-
-            document.getElementById('btn-create-user').addEventListener('click', () => renderUserModal());
-            
-            document.querySelectorAll('.btn-edit-user').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const userId = e.target.dataset.userId;
-                    const userToEdit = users.find(u => u.id === userId);
-                    renderUserModal(userToEdit);
-                });
-            });
-        } catch (error) {
+        if (error) {
             console.error("Erro ao carregar usuários:", error);
-            contentArea.innerHTML += '<p class="error-message">Não foi possível carregar os usuários.</p>';
-        } finally {
-            App.hideLoader(); // Garante que o loader seja escondido ao final da operação
+            // Lança o erro para que o bloco catch em App.loadModule possa exibi-lo ao usuário.
+            throw error;
         }
+
+        const usersList = document.getElementById('users-list');
+        usersList.innerHTML = users.map(user => `
+            <tr>
+                <td>${user.full_name}</td>
+                <td>${user.username}</td>
+                <td>${user.roles ? user.roles.join(', ') : 'Nenhuma'}</td>
+                <td>
+                    <button class="btn btn-secondary btn-sm btn-edit-user" data-user-id="${user.id}">Editar</button>
+                </td>
+            </tr>
+        `).join('');
+
+        document.getElementById('btn-create-user').addEventListener('click', () => renderUserModal());
+        
+        document.querySelectorAll('.btn-edit-user').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const userId = e.target.dataset.userId;
+                const userToEdit = users.find(u => u.id === userId);
+                renderUserModal(userToEdit);
+            });
+        });
+        // REMOVIDO: App.hideLoader();
     };
     
-    // Objeto público do módulo
     return {
         name: 'Usuários',
-        render: async () => { // A função render agora pode ser async
-            const style = document.createElement('style');
-            style.innerHTML = `
-                fieldset { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
-                legend { font-weight: bold; padding: 0 0.5rem; }
-                .roles-container, .perm-item { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.5rem; }
-                .checkbox-group { display: flex; align-items: center; }
-                .checkbox-group input { margin-right: 0.5rem; }
-            `;
-            if (!document.head.querySelector('#usuarios-module-style')) {
-                style.id = 'usuarios-module-style';
+        render: async () => {
+            const styleId = 'usuarios-module-style';
+            if (!document.getElementById(styleId)) {
+                const style = document.createElement('style');
+                style.id = styleId;
+                style.innerHTML = `
+                    fieldset { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
+                    legend { font-weight: bold; padding: 0 0.5rem; }
+                    .roles-container, .perm-item { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.5rem; }
+                    .checkbox-group { display: flex; align-items: center; }
+                    .checkbox-group input { margin-right: 0.5rem; }
+                `;
                 document.head.appendChild(style);
             }
-            
-            await loadUsers(); // Chama a função que carrega os dados e esconde o loader
+            await loadUsers();
         },
     };
 })();
