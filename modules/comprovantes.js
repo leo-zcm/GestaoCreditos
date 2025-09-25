@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO CORRIGIDA PARA LIDAR COM CLIENTES MANUAIS)
+// modules/comprovantes.js (VERSÃO FINAL E CORRIGIDA)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -25,9 +25,6 @@ const ComprovantesModule = (() => {
         listContainer.innerHTML = '<tr><td colspan="7">Buscando...</td></tr>';
 
         try {
-            // ==================================================================
-            // CORREÇÃO 1: Adicionado 'client_name_manual' na consulta SELECT
-            // ==================================================================
             let query = supabase
                 .from('proofs')
                 .select(`
@@ -63,20 +60,31 @@ const ComprovantesModule = (() => {
             const statusInfo = STATUS_MAP[proof.status] || { text: proof.status, class: '' };
             const paymentColor = proof.payment_types?.color || 'grey';
             const userPermissions = App.userProfile.permissions?.comprovantes || {};
-
-            // ==================================================================
-            // CORREÇÃO 2: Lógica de fallback para o nome do cliente
-            // Usa o nome da relação se existir, senão usa o nome manual, senão exibe '---'
-            // O '?' (Optional Chaining) previne o erro se 'clients_erp' for null.
-            // O '||' (Logical OR) serve como fallback.
-            // ==================================================================
             const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
 
-            const canEdit = userPermissions.edit && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
-            const canConfirm = userPermissions.confirm && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
-            const canFaturar = userPermissions.faturar && proof.status === 'CONFIRMADO';
-            const canBaixar = userPermissions.baixar;
-            const canGenerateCredit = userPermissions.gerar_credito && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
+            // ==================================================================
+            // CORREÇÃO 1: LÓGICA DE EXIBIÇÃO DE BOTÕES CORRIGIDA
+            // Implementa as regras exatas de visibilidade para cada status.
+            // ==================================================================
+            let actions = { view: !!proof.proof_url, edit: false, confirm: false, faturar: false, baixar: false, credit: false };
+
+            switch (proof.status) {
+                case 'AGUARDANDO CONFIRMAÇÃO':
+                    actions.edit = userPermissions.edit;
+                    actions.confirm = userPermissions.confirm;
+                    break;
+                case 'CONFIRMADO':
+                    actions.faturar = userPermissions.faturar;
+                    actions.baixar = userPermissions.baixar;
+                    actions.credit = userPermissions.gerar_credito;
+                    break;
+                case 'FATURADO':
+                    actions.baixar = userPermissions.baixar;
+                    break;
+                case 'BAIXADO':
+                    // Apenas o botão "Ver" é exibido, já configurado em 'actions.view'
+                    break;
+            }
 
             return `
                 <tr style="border-left: 4px solid ${paymentColor};">
@@ -88,12 +96,12 @@ const ComprovantesModule = (() => {
                     <td>${proof.faturado_pedido_code || '---'}</td>
                     <td>
                         <div class="action-buttons">
-                            ${proof.proof_url ? `<a href="${proof.proof_url}" target="_blank" class="btn btn-secondary btn-sm">Ver</a>` : ''}
-                            ${canEdit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${proof.id}">Editar</button>` : ''}
-                            ${canConfirm ? `<button class="btn btn-success btn-sm" data-action="confirm" data-id="${proof.id}">Confirmar</button>` : ''}
-                            ${canFaturar ? `<button class="btn btn-primary btn-sm" data-action="faturar" data-id="${proof.id}">Faturar</button>` : ''}
-                            ${canBaixar ? `<button class="btn btn-secondary btn-sm" data-action="baixar" data-id="${proof.id}">Baixar</button>` : ''}
-                            ${canGenerateCredit ? `<button class="btn btn-warning btn-sm" data-action="credit" data-id="${proof.id}">Gerar Crédito</button>` : ''}
+                            ${actions.view ? `<a href="${proof.proof_url}" target="_blank" class="btn btn-secondary btn-sm">Ver</a>` : ''}
+                            ${actions.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${proof.id}">Editar</button>` : ''}
+                            ${actions.confirm ? `<button class="btn btn-success btn-sm" data-action="confirm" data-id="${proof.id}">Confirmar</button>` : ''}
+                            ${actions.faturar ? `<button class="btn btn-primary btn-sm" data-action="faturar" data-id="${proof.id}">Faturar</button>` : ''}
+                            ${actions.baixar ? `<button class="btn btn-secondary btn-sm" data-action="baixar" data-id="${proof.id}">Baixar</button>` : ''}
+                            ${actions.credit ? `<button class="btn btn-warning btn-sm" data-action="credit" data-id="${proof.id}">Gerar Crédito</button>` : ''}
                         </div>
                     </td>
                 </tr>
@@ -386,10 +394,14 @@ const ComprovantesModule = (() => {
                 if (updateError) throw updateError;
 
                 delete originalProof.id;
+                
+                // ==================================================================
+                // CORREÇÃO 2: Status do valor restante alterado para 'CONFIRMADO'
+                // ==================================================================
                 const newProof = {
                     ...originalProof,
                     value: remainingValue,
-                    status: 'AGUARDANDO CONFIRMAÇÃO',
+                    status: 'CONFIRMADO',
                     faturado_pedido_code: null,
                     created_at: new Date(),
                     updated_at: new Date(),
