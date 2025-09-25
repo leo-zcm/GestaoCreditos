@@ -1,4 +1,4 @@
-// auth.js (VERSÃO FINAL COM DOMCONTENTLOADED)
+// auth.js (VERSÃO CORRIGIDA)
 
 // 1. CONFIGURAÇÃO DO SUPABASE (imutável)
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
@@ -22,7 +22,6 @@ async function getUserProfile(userId) {
 }
 
 // 2. LÓGICA PRINCIPAL DA APLICAÇÃO
-// Executa somente após o DOM estar completamente carregado
 document.addEventListener('DOMContentLoaded', () => {
     
     // Seletores de elementos do DOM
@@ -36,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const showLoader = () => loader.classList.add('active');
     const hideLoader = () => loader.classList.remove('active');
 
-    // LÓGICA DE LOGIN (FLUXO DIRETO)
+    // LÓGICA DE LOGIN
     loginButton.addEventListener('click', async () => {
         showLoader();
         loginError.textContent = '';
@@ -76,11 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
         window.location.reload();
     });
 
-    // GERENCIADOR DE ESTADO DE AUTENTICAÇÃO (Sessão existente)
+    // GERENCIADOR DE ESTADO DE AUTENTICAÇÃO
     supabase.auth.onAuthStateChange(async (event, session) => {
-        // Este listener agora lida principalmente com o estado inicial da página
-        // e mudanças de estado que não são o clique de login (ex: refresh de token).
-        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+        if (event === 'INITIAL_SESSION') {
             showLoader();
             try {
                 if (session && session.user) {
@@ -93,6 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         throw new Error("Sessão de usuário inválida.");
                     }
                 } else {
+                    // Nenhuma sessão válida
                     appScreen.style.display = 'none';
                     loginScreen.classList.add('active');
                 }
@@ -103,10 +101,39 @@ document.addEventListener('DOMContentLoaded', () => {
             } finally {
                 hideLoader();
             }
-        } else if (event === 'SIGNED_OUT') {
+        } 
+        else if (event === 'SIGNED_IN') {
+            showLoader();
+            try {
+                if (session && session.user) {
+                    const userProfile = await getUserProfile(session.user.id);
+                    if (userProfile) {
+                        App.init(userProfile);
+                        loginScreen.classList.remove('active');
+                        appScreen.style.display = 'flex';
+                    }
+                }
+            } finally {
+                hideLoader();
+            }
+        } 
+        else if (event === 'SIGNED_OUT') {
             appScreen.style.display = 'none';
             loginScreen.classList.add('active');
             hideLoader();
+        }
+    });
+
+    // VERIFICAR SESSÃO AO VOLTAR PARA A ABA
+    document.addEventListener('visibilitychange', async () => {
+        if (document.visibilityState === 'visible') {
+            const { data, error } = await supabase.auth.getSession();
+            if (!data.session) {
+                // Se não há sessão, volta pro login
+                appScreen.style.display = 'none';
+                loginScreen.classList.add('active');
+                hideLoader();
+            }
         }
     });
 });
