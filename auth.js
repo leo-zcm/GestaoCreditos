@@ -87,9 +87,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
     } catch (error) {
         // ERRO INESPERADO: Captura qualquer erro no processo (falha de rede, etc.)
         console.error("Erro crítico durante a verificação de autenticação:", error.message);
-        // Garante que o usuário seja deslogado em caso de qualquer falha
-        await supabase.auth.signOut(); 
-        // Exibe a tela de login
+
         appScreen.style.display = 'none';
         loginScreen.classList.add('active');
     } finally {
