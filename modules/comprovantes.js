@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO FINAL E CORRIGIDA)
+// modules/comprovantes.js (VERSÃO COM BUSCA CORRIGIDA E NOVA COLUNA)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -22,7 +22,7 @@ const ComprovantesModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
-        listContainer.innerHTML = '<tr><td colspan="7">Buscando...</td></tr>';
+        listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>'; // Colspan atualizado para 8
 
         try {
             let query = supabase
@@ -34,16 +34,29 @@ const ComprovantesModule = (() => {
                 `)
                 .order('created_at', { ascending: false });
 
-            if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code.toUpperCase());
-            if (currentFilters.client_name) query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
+            // ==================================================================
+            // CORREÇÃO 1: LÓGICA DE BUSCA REFINADA
+            // Os filtros agora só são aplicados se os campos tiverem valor.
+            // A busca por nome agora considera tanto clientes com código quanto manuais.
+            // ==================================================================
+            if (currentFilters.status) {
+                query = query.eq('status', currentFilters.status);
+            }
+            if (currentFilters.client_code) {
+                query = query.eq('client_code', currentFilters.client_code.toUpperCase());
+            }
+            if (currentFilters.client_name) {
+                const searchTerm = `%${currentFilters.client_name}%`;
+                // Usa o filtro OR para buscar em qualquer um dos campos de nome
+                query = query.or(`client_name_manual.ilike.${searchTerm},clients_erp.client_name.ilike.${searchTerm}`);
+            }
 
             const { data: proofs, error } = await query;
             if (error) throw error;
             renderTable(proofs);
         } catch (error) {
             console.error("Erro ao carregar comprovantes:", error);
-            listContainer.innerHTML = `<tr><td colspan="7" class="error-message">Falha ao carregar dados.</td></tr>`;
+            listContainer.innerHTML = `<tr><td colspan="8" class="error-message">Falha ao carregar dados.</td></tr>`; // Colspan atualizado
         } finally {
             App.hideLoader();
         }
@@ -52,22 +65,17 @@ const ComprovantesModule = (() => {
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (proofs.length === 0) {
-            listContainer.innerHTML = '<tr><td colspan="7">Nenhum resultado encontrado.</td></tr>';
+            listContainer.innerHTML = '<tr><td colspan="8">Nenhum resultado encontrado.</td></tr>'; // Colspan atualizado
             return;
         }
 
         listContainer.innerHTML = proofs.map(proof => {
             const statusInfo = STATUS_MAP[proof.status] || { text: proof.status, class: '' };
-            const paymentColor = proof.payment_types?.color || 'grey';
-            const userPermissions = App.userProfile.permissions?.comprovantes || {};
+            const paymentType = proof.payment_types || { name: 'N/A', color: 'grey' };
             const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
 
-            // ==================================================================
-            // CORREÇÃO 1: LÓGICA DE EXIBIÇÃO DE BOTÕES CORRIGIDA
-            // Implementa as regras exatas de visibilidade para cada status.
-            // ==================================================================
             let actions = { view: !!proof.proof_url, edit: false, confirm: false, faturar: false, baixar: false, credit: false };
-
+            const userPermissions = App.userProfile.permissions?.comprovantes || {};
             switch (proof.status) {
                 case 'AGUARDANDO CONFIRMAÇÃO':
                     actions.edit = userPermissions.edit;
@@ -81,20 +89,23 @@ const ComprovantesModule = (() => {
                 case 'FATURADO':
                     actions.baixar = userPermissions.baixar;
                     break;
-                case 'BAIXADO':
-                    // Apenas o botão "Ver" é exibido, já configurado em 'actions.view'
-                    break;
             }
 
             return `
-                <tr style="border-left: 4px solid ${paymentColor};">
+                <tr>
                     <td>${new Date(proof.created_at).toLocaleDateString()}</td>
                     <td>${proof.client_code || 'N/A'}</td>
                     <td>${clientName}</td>
                     <td>${proof.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    
+                    <!-- CORREÇÃO 2: Nova coluna de Tipo de Pagamento com estilo dinâmico -->
+                    <td class="col-payment-type" style="background-color: ${paymentType.color};">${paymentType.name}</td>
+                    
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td>${proof.faturado_pedido_code || '---'}</td>
-                    <td>
+                    
+                    <!-- CORREÇÃO 3: Classe aplicada para controlar a largura da coluna -->
+                    <td class="col-actions">
                         <div class="action-buttons">
                             ${actions.view ? `<a href="${proof.proof_url}" target="_blank" class="btn btn-secondary btn-sm">Ver</a>` : ''}
                             ${actions.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${proof.id}">Editar</button>` : ''}
@@ -109,6 +120,7 @@ const ComprovantesModule = (() => {
         }).join('');
     };
 
+    // ... (O restante do arquivo: handleTableClick, updateProofStatus, renderProofModal, etc. permanece o mesmo)
     const handleTableClick = async (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
@@ -395,9 +407,6 @@ const ComprovantesModule = (() => {
 
                 delete originalProof.id;
                 
-                // ==================================================================
-                // CORREÇÃO 2: Status do valor restante alterado para 'CONFIRMADO'
-                // ==================================================================
                 const newProof = {
                     ...originalProof,
                     value: remainingValue,
@@ -458,9 +467,10 @@ const ComprovantesModule = (() => {
                                 <th>Cód. Cliente</th>
                                 <th>Cliente</th>
                                 <th>Valor</th>
+                                <th>Tipo</th>
                                 <th>Status</th>
                                 <th>Pedido</th>
-                                <th>Ações</th>
+                                <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
                         <tbody id="proofs-list"></tbody>
