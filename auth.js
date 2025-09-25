@@ -48,6 +48,29 @@ document.addEventListener('DOMContentLoaded', () => {
         loginScreen.classList.add('active');
     };
 
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+
+    // Forçar MAIÚSCULAS no campo de usuário
+    usernameInput.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase();
+    });
+
+    // Navegação com a tecla ENTER
+    usernameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Impede o envio do formulário
+            passwordInput.focus(); // Move o foco para o campo de senha
+        }
+    });
+
+    passwordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Impede o envio do formulário
+            loginButton.click(); // Simula o clique no botão de entrar
+        }
+    });
+
     // LÓGICA DE LOGIN
     const handleLogin = async (event) => {
         // Previne o envio do formulário se o evento for de submit
