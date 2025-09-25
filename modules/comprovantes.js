@@ -1,6 +1,7 @@
-// modules/comprovantes.js (VERSÃO COMPLETA E FUNCIONAL)
+// modules/comprovantes.js (VERSÃO FINAL E COMPLETA)
 
 const ComprovantesModule = (() => {
+    // Mapeamento de status do DB para um texto mais amigável e classes de CSS
     const STATUS_MAP = {
         'AGUARDANDO CONFIRMAÇÃO': { text: 'Pendente', class: 'status-pending' },
         'CONFIRMADO': { text: 'Confirmado', class: 'status-confirmed' },
@@ -9,16 +10,17 @@ const ComprovantesModule = (() => {
         'BAIXADO': { text: 'Baixado', class: 'status-cleared' },
     };
 
+    // Estado local do módulo para manter os filtros e o arquivo a ser enviado
     let currentFilters = {
         client_code: '',
         client_name: '',
         start_date: '',
         end_date: '',
-        status: 'CONFIRMADO',
+        status: 'CONFIRMADO', // Filtro padrão
     };
-
     let fileToUpload = null; // Armazena o arquivo (colado ou selecionado)
 
+    // Função principal para carregar e renderizar os comprovantes
     const loadProofs = async () => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
@@ -35,8 +37,9 @@ const ComprovantesModule = (() => {
                 `)
                 .order('created_at', { ascending: false });
 
+            // Aplicar filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code);
+            if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code.toUpperCase());
             if (currentFilters.client_name) query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
 
             const { data: proofs, error } = await query;
@@ -50,6 +53,7 @@ const ComprovantesModule = (() => {
         }
     };
 
+    // Renderiza as linhas da tabela
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (proofs.length === 0) {
@@ -66,7 +70,7 @@ const ComprovantesModule = (() => {
             const canConfirm = userPermissions.confirm && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
             const canFaturar = userPermissions.faturar && proof.status === 'CONFIRMADO';
             const canBaixar = userPermissions.baixar;
-            const canGenerateCredit = userPermissions.gerar_credito && proof.status === 'AGUARGUANDO CONFIRMAÇÃO';
+            const canGenerateCredit = userPermissions.gerar_credito && proof.status === 'AGUARDANDO CONFIRMAÇÃO';
 
             return `
                 <tr style="border-left: 4px solid ${paymentColor};">
@@ -91,6 +95,7 @@ const ComprovantesModule = (() => {
         }).join('');
     };
 
+    // Lida com cliques nos botões de ação da tabela
     const handleTableClick = async (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
@@ -99,8 +104,9 @@ const ComprovantesModule = (() => {
         const id = button.dataset.id;
 
         if (action === 'edit') {
-            const { data: proofToEdit } = await supabase.from('proofs').select('*').eq('id', id).single();
+            const { data: proofToEdit, error } = await supabase.from('proofs').select('*, clients_erp(client_name)').eq('id', id).single();
             if (proofToEdit) renderProofModal(proofToEdit);
+            else console.error("Erro ao buscar comprovante para edição:", error);
         } else if (action === 'confirm') {
             if (confirm('Deseja confirmar este pagamento?')) await updateProofStatus(id, 'CONFIRMADO');
         } else if (action === 'faturar') {
@@ -112,6 +118,7 @@ const ComprovantesModule = (() => {
         }
     };
 
+    // Função genérica para atualizar o status
     const updateProofStatus = async (id, newStatus) => {
         App.showLoader();
         try {
@@ -152,8 +159,8 @@ const ComprovantesModule = (() => {
                         <input type="text" id="clientCode" value="${proof?.client_code || ''}" style="text-transform: uppercase;">
                     </div>
                     <div class="form-group">
-                        <label for="clientName">Nome do Cliente (preenchido automaticamente)</label>
-                        <input type="text" id="clientName" disabled>
+                        <label for="clientName">Nome do Cliente</label>
+                        <input type="text" id="clientName" value="${proof?.clients_erp?.client_name || ''}" ${proof?.client_code ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label for="value">Valor</label>
@@ -165,7 +172,7 @@ const ComprovantesModule = (() => {
                     </fieldset>
                     <div class="form-group">
                         <label>Comprovante</label>
-                        <div id="file-drop-area">
+                        <div id="file-drop-area" class="file-drop-area">
                             <p><strong>Cole (Ctrl+V)</strong> uma imagem aqui, ou <strong>clique para selecionar</strong> um arquivo (imagem ou PDF).</p>
                         </div>
                         <input type="file" id="file-input" accept="image/*,application/pdf" style="display: none;">
@@ -182,12 +189,12 @@ const ComprovantesModule = (() => {
                 </form>
             `;
 
-            // Lógica de preenchimento e interatividade do formulário
             const clientCodeInput = document.getElementById('clientCode');
             const clientNameInput = document.getElementById('clientName');
             
             const fetchClientName = async () => {
-                const code = clientCodeInput.value;
+                const code = clientCodeInput.value.toUpperCase();
+                clientCodeInput.value = code; // Garante que o valor está em maiúsculas
                 if (!code) {
                     clientNameInput.value = '';
                     clientNameInput.disabled = false;
@@ -204,9 +211,7 @@ const ComprovantesModule = (() => {
             };
 
             clientCodeInput.addEventListener('blur', fetchClientName);
-            if (proof?.client_code) await fetchClientName(); // Preenche ao editar
 
-            // Lógica de upload/paste
             const dropArea = document.getElementById('file-drop-area');
             const fileInput = document.getElementById('file-input');
             dropArea.addEventListener('click', () => fileInput.click());
@@ -266,11 +271,15 @@ const ComprovantesModule = (() => {
         try {
             const proofId = form.proofId.value;
             const isNew = !proofId;
-            let proofUrl = isNew ? null : (await supabase.from('proofs').select('proof_url').eq('id', proofId).single()).data.proof_url;
+            let proofUrl = null;
+            if(!isNew) {
+                const { data } = await supabase.from('proofs').select('proof_url').eq('id', proofId).single();
+                proofUrl = data.proof_url;
+            }
 
             if (fileToUpload) {
                 const filePath = `${App.userProfile.id}/${Date.now()}-${fileToUpload.name}`;
-                const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, fileToUpload);
+                const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, fileToUpload, { upsert: true });
                 if (uploadError) throw new Error(`Falha no upload: ${uploadError.message}`);
                 
                 const { data: urlData } = supabase.storage.from('comprovantes').getPublicUrl(filePath);
@@ -279,6 +288,7 @@ const ComprovantesModule = (() => {
 
             const proofData = {
                 client_code: form.clientCode.value.toUpperCase(),
+                client_name_manual: form.clientName.disabled ? null : form.clientName.value, // Salva nome manual se aplicável
                 value: parseFloat(form.value.value),
                 payment_type_id: form.payment_type.value,
                 proof_url: proofUrl,
@@ -307,10 +317,108 @@ const ComprovantesModule = (() => {
         }
     };
     
-    // A função renderFaturarModal e handleFaturarSubmit permanecem as mesmas da versão anterior
-    const renderFaturarModal = async (proofId) => { /* ...código inalterado... */ };
-    const handleFaturarSubmit = async (proofId, originalValue) => { /* ...código inalterado... */ };
+    const renderFaturarModal = async (proofId) => {
+        App.showLoader();
+        try {
+            const { data: proof, error } = await supabase.from('proofs').select('value').eq('id', proofId).single();
+            if (error) throw error;
 
+            const modalBody = document.getElementById('modal-body');
+            modalBody.innerHTML = `
+                <h2>Faturar Pagamento</h2>
+                <form id="faturar-form">
+                    <p>Valor total do pagamento: <strong>${proof.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
+                    <div class="form-group">
+                        <label for="pedidoCode">Código do Pedido</label>
+                        <input type="text" id="pedidoCode" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="faturarValue">Valor a Faturar</label>
+                        <input type="number" id="faturarValue" step="0.01" value="${proof.value}" max="${proof.value}" required>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <button type="submit" class="btn btn-primary">Confirmar Faturamento</button>
+                </form>
+            `;
+            document.getElementById('modal-container').classList.add('active');
+            
+            document.getElementById('faturar-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await handleFaturarSubmit(proofId, proof.value);
+            });
+
+        } catch (error) {
+            console.error("Erro ao buscar dados para faturamento:", error);
+            alert('Não foi possível carregar os dados do pagamento.');
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleFaturarSubmit = async (proofId, originalValue) => {
+        App.showLoader();
+        const pedidoCode = document.getElementById('pedidoCode').value;
+        const faturarValue = parseFloat(document.getElementById('faturarValue').value);
+
+        try {
+            if (!pedidoCode || isNaN(faturarValue) || faturarValue <= 0 || faturarValue > originalValue) {
+                throw new Error('Dados inválidos. Verifique o código do pedido e o valor.');
+            }
+
+            const remainingValue = originalValue - faturarValue;
+
+            if (remainingValue > 0.009) { // Usar uma pequena tolerância para evitar problemas de ponto flutuante
+                // Lógica de divisão
+                const { data: originalProof, error: selectError } = await supabase.from('proofs').select('*').eq('id', proofId).single();
+                if (selectError) throw selectError;
+
+                // 1. Atualiza o registro original para ser o valor faturado
+                const { error: updateError } = await supabase
+                    .from('proofs')
+                    .update({
+                        value: faturarValue,
+                        status: 'FATURADO',
+                        faturado_pedido_code: pedidoCode,
+                        updated_at: new Date()
+                    })
+                    .eq('id', proofId);
+                if (updateError) throw updateError;
+
+                // 2. Cria um novo registro com o valor restante
+                delete originalProof.id; // Remove o ID para criar um novo
+                const newProof = {
+                    ...originalProof,
+                    value: remainingValue,
+                    status: 'AGUARDANDO CONFIRMAÇÃO',
+                    faturado_pedido_code: null,
+                    created_at: new Date(),
+                    updated_at: new Date(),
+                };
+
+                const { error: insertError } = await supabase.from('proofs').insert(newProof);
+                if (insertError) throw insertError;
+
+            } else {
+                // Faturamento total
+                const { error } = await supabase
+                    .from('proofs')
+                    .update({ status: 'FATURADO', faturado_pedido_code: pedidoCode, updated_at: new Date() })
+                    .eq('id', proofId);
+                if (error) throw error;
+            }
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadProofs();
+
+        } catch (error) {
+            console.error("Erro ao faturar:", error);
+            document.getElementById('modal-error').textContent = error.message;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    // Função principal de renderização do módulo
     const render = async () => {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
@@ -320,7 +428,7 @@ const ComprovantesModule = (() => {
                     <button id="btn-new-proof" class="btn btn-primary">Novo Pagamento</button>
                 </div>
                 <div class="filters">
-                    <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
+                    <input type="text" id="filter-client-code" placeholder="Cód. Cliente" style="text-transform: uppercase;">
                     <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
                     <select id="filter-status">
                         <option value="">Todos Status</option>
@@ -362,5 +470,8 @@ const ComprovantesModule = (() => {
         await loadProofs();
     };
 
-    return { name: 'Comprovantes', render };
+    return {
+        name: 'Comprovantes',
+        render: render,
+    };
 })();
