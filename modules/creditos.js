@@ -1,0 +1,545 @@
+// modules/creditos.js (MÓDULO COMPLETO)
+
+const CreditosModule = (() => {
+    // Estado do módulo
+    let currentFilters = { status: 'Disponível' };
+    let selectedCredits = new Map(); // Usamos um Map para fácil acesso e deleção
+
+    // Função principal para renderizar a view do módulo
+    const render = async (initialFilters = null) => {
+        // Aplica filtros iniciais se vierem do dashboard, por exemplo
+        if (initialFilters) {
+            currentFilters = { ...currentFilters, ...initialFilters };
+        }
+
+        const contentArea = document.getElementById('content-area');
+        contentArea.innerHTML = `
+            <div class="card">
+                <div class="card-header">
+                    <h2>Gerenciamento de Créditos</h2>
+                    <button id="btn-new-credit" class="btn btn-primary">Adicionar Crédito</button>
+                </div>
+                <div class="filters">
+                    <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
+                    <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
+                    <select id="filter-status">
+                        <option value="Disponível" selected>Disponível</option>
+                        <option value="Abatido">Abatido</option>
+                    </select>
+                    <select id="filter-seller"></select> <!-- Populado dinamicamente -->
+                    <input type="date" id="filter-date-start" title="Data inicial">
+                    <input type="date" id="filter-date-end" title="Data final">
+                    <button id="btn-apply-filters" class="btn btn-secondary">Buscar</button>
+                </div>
+                <div class="table-container">
+                    <table id="credits-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all-credits"></th>
+                                <th>Data</th>
+                                <th>Nº Registro</th>
+                                <th>Cód. Cliente</th>
+                                <th>Cliente</th>
+                                <th>Descrição</th>
+                                <th>Qtd</th>
+                                <th>Valor</th>
+                                <th>Pedido Abatido</th>
+                                <th class="col-actions">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="credits-list"></tbody>
+                    </table>
+                </div>
+                <div id="selection-summary" class="selection-summary">
+                    <span>Nenhum crédito selecionado.</span>
+                    <button id="btn-multi-abate" class="btn btn-success" disabled>Abater Múltiplos</button>
+                </div>
+            </div>
+        `;
+
+        // Adiciona CSS específico para este módulo
+        const styleId = 'creditos-module-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                #credits-table { font-size: 0.9rem; }
+                #credits-table td, #credits-table th { padding: 0.6rem; }
+                .selection-summary { 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: center; 
+                    padding: 1rem; 
+                    background-color: var(--light-color); 
+                    border-top: 1px solid var(--border-color);
+                    margin: 1rem -1.5rem -1.5rem -1.5rem; /* Ajusta ao padding do card */
+                    border-radius: 0 0 8px 8px;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
+        await populateSellersDropdown();
+        setupEventListeners();
+        await loadCredits();
+    };
+
+    // Popula o dropdown de vendedores
+    const populateSellersDropdown = async () => {
+        const sellerSelect = document.getElementById('filter-seller');
+        const { data: sellers, error } = await supabase
+            .from('profiles')
+            .select('full_name, seller_id_erp')
+            .not('seller_id_erp', 'is', null)
+            .order('full_name');
+
+        if (error) {
+            console.error("Erro ao buscar vendedores:", error);
+            return;
+        }
+
+        let options = '<option value="">Todos Vendedores</option>';
+        sellers.forEach(s => {
+            options += `<option value="${s.seller_id_erp}">${s.full_name}</option>`;
+        });
+        sellerSelect.innerHTML = options;
+    };
+
+    // Carrega os créditos do Supabase com base nos filtros
+    const loadCredits = async () => {
+        App.showLoader();
+        const listContainer = document.getElementById('credits-list');
+        listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
+
+        try {
+            const userPermissions = App.userProfile.permissions?.creditos || {};
+            let query = supabase.from('credits').select(`
+                *,
+                clients_erp(client_name)
+            `);
+
+            // Aplica filtros de texto e status
+            if (currentFilters.status) query = query.eq('status', currentFilters.status);
+            if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
+            if (currentFilters.client_name) query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
+            
+            // Aplica filtro de data
+            if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
+            if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
+
+            // Lógica de permissão de visualização
+            let sellerErpIdToFilter = currentFilters.seller_id;
+            if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
+                sellerErpIdToFilter = App.userProfile.seller_id_erp;
+                document.getElementById('filter-seller').value = sellerErpIdToFilter;
+                document.getElementById('filter-seller').disabled = true;
+            }
+
+            if (sellerErpIdToFilter) {
+                const { data: clientCodes, error: clientError } = await supabase
+                    .from('clients_erp')
+                    .select('client_code')
+                    .eq('id_vendedor', sellerErpIdToFilter);
+                
+                if (clientError) throw clientError;
+                const codes = clientCodes.map(c => c.client_code);
+                query = query.in('client_code', codes);
+            }
+
+            const { data: credits, error } = await query.order('created_at', { ascending: false });
+            if (error) throw error;
+
+            renderTable(credits);
+
+        } catch (error) {
+            console.error("Erro ao carregar créditos:", error);
+            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados.</td></tr>`;
+        } finally {
+            App.hideLoader();
+            updateSelectionSummary();
+        }
+    };
+
+    // Renderiza a tabela com os dados
+    const renderTable = (credits) => {
+        const listContainer = document.getElementById('credits-list');
+        if (credits.length === 0) {
+            listContainer.innerHTML = '<tr><td colspan="10">Nenhum resultado encontrado.</td></tr>';
+            return;
+        }
+
+        listContainer.innerHTML = credits.map(credit => {
+            const isSelected = selectedCredits.has(credit.id);
+            return `
+                <tr class="${isSelected ? 'selected' : ''}">
+                    <td><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
+                    <td>${new Date(credit.created_at).toLocaleDateString()}</td>
+                    <td>${credit.n_registro || '---'}</td>
+                    <td>${credit.client_code}</td>
+                    <td>${credit.clients_erp?.client_name || 'N/A'}</td>
+                    <td>${credit.description}</td>
+                    <td>${credit.quantity || '---'}</td>
+                    <td>${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td>${credit.abatement_order || '---'}</td>
+                    <td class="col-actions">
+                        ${credit.status === 'Disponível' ? `
+                            <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>
+                            <button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>
+                        ` : ''}
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    };
+
+    // Renderiza o modal para criar ou editar um crédito
+    const renderCreditModal = async (credit = null) => {
+        const isNew = credit === null;
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `
+            <h2>${isNew ? 'Adicionar Novo' : 'Editar'} Crédito</h2>
+            <form id="credit-form">
+                <input type="hidden" id="creditId" value="${credit?.id || ''}">
+                <div class="form-group">
+                    <label for="nRegistro">Nº de Registro (Opcional)</label>
+                    <input type="text" id="nRegistro" value="${credit?.n_registro || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="clientCode">Código do Cliente</label>
+                    <input type="text" id="clientCode" value="${credit?.client_code || ''}" required style="text-transform: uppercase;">
+                </div>
+                <div class="form-group">
+                    <label for="clientName">Nome do Cliente</label>
+                    <input type="text" id="clientName" value="${credit?.clients_erp?.client_name || ''}" disabled>
+                </div>
+                 <div class="form-group">
+                    <label for="sellerName">Vendedor</label>
+                    <input type="text" id="sellerName" disabled>
+                </div>
+                <div class="form-group">
+                    <label for="productCode">Código do Produto (Opcional)</label>
+                    <input type="text" id="productCode" value="${credit?.product_code || ''}" style="text-transform: uppercase;">
+                </div>
+                <div class="form-group">
+                    <label for="description">Descrição</label>
+                    <input type="text" id="description" value="${credit?.description || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label for="quantity">Quantidade</label>
+                    <input type="number" id="quantity" value="${credit?.quantity || ''}">
+                </div>
+                <div class="form-group">
+                    <label for="value">Valor do Crédito</label>
+                    <input type="number" id="value" step="0.01" value="${credit?.value || ''}" required>
+                </div>
+                <div class="form-group">
+                    <label for="notes">Observações</label>
+                    <textarea id="notes" rows="2">${credit?.notes || ''}</textarea>
+                </div>
+                <p id="modal-error" class="error-message"></p>
+                <button type="submit" class="btn btn-primary">${isNew ? 'Salvar Crédito' : 'Salvar Alterações'}</button>
+            </form>
+        `;
+
+        // Lógica de preenchimento automático
+        const clientCodeInput = document.getElementById('clientCode');
+        const productCodeInput = document.getElementById('productCode');
+        const descriptionInput = document.getElementById('description');
+
+        const fetchClientData = async () => {
+            const code = clientCodeInput.value;
+            if (!code) return;
+            const { data: client, error } = await supabase.from('clients_erp').select('client_name, id_vendedor').eq('client_code', code).single();
+            if (client) {
+                document.getElementById('clientName').value = client.client_name;
+                if (client.id_vendedor) {
+                    const { data: seller } = await supabase.from('profiles').select('full_name').eq('seller_id_erp', client.id_vendedor).single();
+                    document.getElementById('sellerName').value = seller ? seller.full_name : 'Vendedor não encontrado';
+                } else {
+                    document.getElementById('sellerName').value = 'Cliente sem vendedor';
+                }
+            } else {
+                document.getElementById('clientName').value = 'Cliente não encontrado';
+                document.getElementById('sellerName').value = '';
+            }
+        };
+
+        const fetchProductData = async () => {
+            const code = productCodeInput.value;
+            if (!code) {
+                descriptionInput.readOnly = false;
+                return;
+            }
+            const { data: product, error } = await supabase.from('products_erp').select('product_name').eq('product_code', code).single();
+            if (product) {
+                descriptionInput.value = product.product_name;
+                descriptionInput.readOnly = true;
+                document.getElementById('quantity').required = true;
+            } else {
+                descriptionInput.readOnly = false;
+                document.getElementById('quantity').required = false;
+            }
+        };
+
+        clientCodeInput.addEventListener('blur', fetchClientData);
+        productCodeInput.addEventListener('blur', fetchProductData);
+        
+        if (!isNew) { // Se for edição, busca os dados iniciais
+            await fetchClientData();
+            await fetchProductData();
+        }
+
+        document.getElementById('credit-form').addEventListener('submit', handleFormSubmit);
+        document.getElementById('modal-container').classList.add('active');
+    };
+
+    // Manipula o envio do formulário de crédito
+    const handleFormSubmit = async (e) => {
+        e.preventDefault();
+        App.showLoader();
+        const form = e.target;
+        const errorP = document.getElementById('modal-error');
+        errorP.textContent = '';
+
+        try {
+            const creditId = form.creditId.value;
+            const creditData = {
+                n_registro: form.nRegistro.value || null,
+                client_code: form.clientCode.value.toUpperCase(),
+                product_code: form.productCode.value.toUpperCase() || null,
+                description: form.description.value,
+                quantity: form.quantity.value ? parseInt(form.quantity.value) : null,
+                value: parseFloat(form.value.value),
+                notes: form.notes.value || null,
+            };
+
+            if (creditId) { // Edição
+                const { error } = await supabase.from('credits').update(creditData).eq('id', creditId);
+                if (error) throw error;
+            } else { // Criação
+                creditData.created_by = App.userProfile.id;
+                const { error } = await supabase.from('credits').insert(creditData);
+                if (error) throw error;
+            }
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadCredits();
+
+        } catch (error) {
+            console.error("Erro ao salvar crédito:", error);
+            errorP.textContent = error.message;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    // Renderiza o modal de abatimento (simples ou múltiplo)
+    const renderAbateModal = async (creditIds) => {
+        const isMulti = creditIds.length > 1;
+        let totalValue = 0;
+        let title = 'Abater Crédito';
+
+        if (isMulti) {
+            title = `Abater ${creditIds.length} Créditos`;
+            creditIds.forEach(id => totalValue += selectedCredits.get(id).value);
+        } else {
+            const { data: credit } = await supabase.from('credits').select('value').eq('id', creditIds[0]).single();
+            totalValue = credit.value;
+        }
+
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `
+            <h2>${title}</h2>
+            <form id="abate-form">
+                <p>Valor total: <strong>${totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
+                <div class="form-group">
+                    <label for="abatementOrder">Pedido ou Lançamento</label>
+                    <input type="text" id="abatementOrder" required>
+                </div>
+                <div class="form-group">
+                    <label for="abateValue">Valor a Abater</label>
+                    <input type="number" id="abateValue" step="0.01" value="${totalValue.toFixed(2)}" max="${totalValue.toFixed(2)}" required>
+                </div>
+                <p id="modal-error" class="error-message"></p>
+                <button type="submit" class="btn btn-primary">Confirmar Abatimento</button>
+            </form>
+        `;
+
+        document.getElementById('abate-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleAbateSubmit(creditIds, totalValue);
+        });
+        document.getElementById('modal-container').classList.add('active');
+    };
+
+    // Manipula o envio do formulário de abatimento
+    const handleAbateSubmit = async (creditIds, originalTotalValue) => {
+        App.showLoader();
+        const errorP = document.getElementById('modal-error');
+        errorP.textContent = '';
+
+        try {
+            const abatementOrder = document.getElementById('abatementOrder').value;
+            const abateValue = parseFloat(document.getElementById('abateValue').value);
+
+            if (!abatementOrder || isNaN(abateValue) || abateValue <= 0 || abateValue > originalTotalValue) {
+                throw new Error('Dados inválidos. Verifique o pedido e o valor.');
+            }
+
+            // Pega os dados completos dos créditos a serem abatidos
+            const { data: creditsToAbate, error: fetchError } = await supabase
+                .from('credits')
+                .select('*')
+                .in('id', creditIds)
+                .order('created_at', { ascending: true }); // Abate os mais antigos primeiro
+
+            if (fetchError) throw fetchError;
+
+            let remainingAbateValue = abateValue;
+
+            for (const credit of creditsToAbate) {
+                if (remainingAbateValue <= 0) break;
+
+                const abatementData = {
+                    status: 'Abatido',
+                    abatement_order: abatementOrder,
+                    abated_at: new Date().toISOString(),
+                    abated_by: App.userProfile.id
+                };
+
+                if (remainingAbateValue >= credit.value) { // Abatimento total
+                    const { error } = await supabase.from('credits').update(abatementData).eq('id', credit.id);
+                    if (error) throw error;
+                    remainingAbateValue -= credit.value;
+                } else { // Abatimento parcial (lógica de "split")
+                    // 1. Atualiza o crédito original para ser a parte abatida
+                    const { error: updateError } = await supabase.from('credits')
+                        .update({ ...abatementData, value: remainingAbateValue })
+                        .eq('id', credit.id);
+                    if (updateError) throw updateError;
+
+                    // 2. Cria um novo crédito com o valor restante
+                    const newCreditData = { ...credit };
+                    delete newCreditData.id; // Remove o ID para criar um novo registro
+                    newCreditData.value = credit.value - remainingAbateValue;
+                    newCreditData.status = 'Disponível';
+                    newCreditData.original_credit_id = credit.id; // Rastreia a origem
+                    newCreditData.created_at = new Date().toISOString(); // Atualiza a data de criação do "resto"
+                    
+                    const { error: insertError } = await supabase.from('credits').insert(newCreditData);
+                    if (insertError) throw insertError;
+
+                    remainingAbateValue = 0;
+                }
+            }
+
+            document.getElementById('modal-container').classList.remove('active');
+            selectedCredits.clear();
+            await loadCredits();
+
+        } catch (error) {
+            console.error("Erro ao abater crédito(s):", error);
+            errorP.textContent = error.message;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    // Atualiza o sumário de seleção
+    const updateSelectionSummary = () => {
+        const summaryContainer = document.getElementById('selection-summary');
+        if (!summaryContainer) return;
+
+        const count = selectedCredits.size;
+        const multiAbateBtn = document.getElementById('btn-multi-abate');
+
+        if (count === 0) {
+            summaryContainer.querySelector('span').textContent = 'Nenhum crédito selecionado.';
+            multiAbateBtn.disabled = true;
+        } else {
+            let total = 0;
+            selectedCredits.forEach(credit => total += credit.value);
+            summaryContainer.querySelector('span').textContent = 
+                `${count} crédito(s) selecionado(s) | Total: ${total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+            multiAbateBtn.disabled = false;
+        }
+    };
+
+    // Configura todos os event listeners da página
+    const setupEventListeners = () => {
+        const contentArea = document.getElementById('content-area');
+
+        // Botões principais
+        document.getElementById('btn-new-credit').addEventListener('click', () => renderCreditModal());
+        document.getElementById('btn-apply-filters').addEventListener('click', () => {
+            currentFilters = {
+                client_code: document.getElementById('filter-client-code').value,
+                client_name: document.getElementById('filter-client-name').value,
+                status: document.getElementById('filter-status').value,
+                seller_id: document.getElementById('filter-seller').value,
+                date_start: document.getElementById('filter-date-start').value,
+                date_end: document.getElementById('filter-date-end').value,
+            };
+            loadCredits();
+        });
+        document.getElementById('btn-multi-abate').addEventListener('click', () => {
+            const ids = Array.from(selectedCredits.keys());
+            if (ids.length > 0) {
+                renderAbateModal(ids);
+            }
+        });
+
+        // Ações na tabela (edição, abatimento, seleção)
+        const table = document.getElementById('credits-list');
+        table.addEventListener('click', async (e) => {
+            const target = e.target;
+            
+            // Ações de botão
+            if (target.tagName === 'BUTTON') {
+                const action = target.dataset.action;
+                const id = target.dataset.id;
+                if (action === 'edit') {
+                    const { data: credit } = await supabase.from('credits').select('*, clients_erp(client_name)').eq('id', id).single();
+                    renderCreditModal(credit);
+                }
+                if (action === 'abater') {
+                    renderAbateModal([id]);
+                }
+            }
+
+            // Seleção de checkbox
+            if (target.classList.contains('credit-select')) {
+                const id = target.dataset.id;
+                if (target.checked) {
+                    const { data: credit } = await supabase.from('credits').select('id, value').eq('id', id).single();
+                    selectedCredits.set(id, credit);
+                } else {
+                    selectedCredits.delete(id);
+                }
+                updateSelectionSummary();
+            }
+        });
+
+        // Checkbox "Selecionar Tudo"
+        document.getElementById('select-all-credits').addEventListener('change', async (e) => {
+            const isChecked = e.target.checked;
+            const checkboxes = document.querySelectorAll('.credit-select');
+            
+            selectedCredits.clear();
+            if (isChecked) {
+                const creditIds = Array.from(checkboxes).map(cb => cb.dataset.id);
+                const { data: credits } = await supabase.from('credits').select('id, value').in('id', creditIds);
+                credits.forEach(c => selectedCredits.set(c.id, c));
+            }
+            
+            checkboxes.forEach(checkbox => checkbox.checked = isChecked);
+            updateSelectionSummary();
+        });
+    };
+
+    // Interface pública do módulo
+    return {
+        name: 'Créditos',
+        render
+    };
+})();
