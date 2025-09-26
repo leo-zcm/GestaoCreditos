@@ -1,10 +1,11 @@
-// modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
+// modules/creditos.js (VERSÃO FINAL COMPLETA E CORRIGIDA)
 
 const CreditosModule = (() => {
     // Estado do módulo
-    let currentFilters = { status: 'Disponível' };
+    let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
+    // Função principal para renderizar a view do módulo
     const render = async (initialFilters = null) => {
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
@@ -25,6 +26,10 @@ const CreditosModule = (() => {
                         <option value="Abatido">Abatido</option>
                     </select>
                     <select id="filter-seller"></select>
+                    <select id="filter-date-type" title="Tipo de Data">
+                        <option value="created_at" selected>Data de Criação</option>
+                        <option value="abated_at">Data de Abatimento</option>
+                    </select>
                     <input type="date" id="filter-date-start" title="Data inicial">
                     <input type="date" id="filter-date-end" title="Data final">
                     <button id="btn-apply-filters" class="btn btn-secondary">Buscar</button>
@@ -34,14 +39,14 @@ const CreditosModule = (() => {
                         <thead>
                             <tr>
                                 <th><input type="checkbox" id="select-all-credits"></th>
-                                <th>Data</th>
+                                <th>Data Criação</th>
                                 <th>Nº Registro</th>
                                 <th>Cód. Cliente</th>
                                 <th>Cliente</th>
                                 <th>Descrição</th>
                                 <th>Qtd</th>
                                 <th>Valor</th>
-                                <th>Pedido Abatido</th>
+                                <th class="col-pedido">Ped. Abatido</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
@@ -60,8 +65,10 @@ const CreditosModule = (() => {
             const style = document.createElement('style');
             style.id = styleId;
             style.innerHTML = `
-                #credits-table { font-size: 0.9rem; }
-                #credits-table td, #credits-table th { padding: 0.6rem; }
+                #credits-table { font-size: 0.9rem; table-layout: fixed; }
+                #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                .col-pedido { width: 10%; }
+                .col-actions { width: 140px; text-align: right; }
                 .selection-summary { 
                     display: flex; justify-content: space-between; align-items: center; 
                     padding: 1rem; background-color: var(--light-color); 
@@ -105,18 +112,15 @@ const CreditosModule = (() => {
 
         try {
             const userPermissions = App.userProfile.permissions?.creditos || {};
-            const selectStatement = `
-                id, created_at, n_registro, client_code, product_code, 
-                description, quantity, value, notes, status, 
-                abatement_order,
-                clients_erp(client_name)
-            `;
+            const selectStatement = `*, clients_erp(client_name)`;
             let query = supabase.from('credits').select(selectStatement);
 
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
-            if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
-            if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
+            
+            const dateColumn = currentFilters.date_type || 'created_at';
+            if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
+            if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
 
             let sellerErpIdToFilter = currentFilters.seller_id;
             if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
@@ -127,10 +131,7 @@ const CreditosModule = (() => {
 
             if (sellerErpIdToFilter) {
                 const { data: clientCodes, error: clientError } = await supabase
-                    .from('clients_erp')
-                    .select('client_code')
-                    .eq('id_vendedor', sellerErpIdToFilter);
-                
+                    .from('clients_erp').select('client_code').eq('id_vendedor', sellerErpIdToFilter);
                 if (clientError) throw clientError;
                 const codes = clientCodes.map(c => c.client_code);
                 if (codes.length === 0) {
@@ -153,7 +154,7 @@ const CreditosModule = (() => {
 
         } catch (error) {
             console.error("Erro ao carregar créditos:", error);
-            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados.</td></tr>`;
+            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
         } finally {
             App.hideLoader();
             updateSelectionSummary();
@@ -174,11 +175,11 @@ const CreditosModule = (() => {
                     <td>${new Date(credit.created_at).toLocaleDateString()}</td>
                     <td>${credit.n_registro || '---'}</td>
                     <td>${credit.client_code}</td>
-                    <td>${credit.clients_erp?.client_name || 'N/A'}</td>
-                    <td>${credit.description}</td>
+                    <td title="${credit.clients_erp?.client_name || ''}">${credit.clients_erp?.client_name || 'N/A'}</td>
+                    <td title="${credit.description}">${credit.description}</td>
                     <td>${credit.quantity || '---'}</td>
                     <td>${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td>${credit.abatement_order || '---'}</td>
+                    <td class="col-pedido">${credit.abatement_order || '---'}</td>
                     <td class="col-actions">
                         ${credit.status === 'Disponível' ? `
                             <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>
@@ -237,9 +238,12 @@ const CreditosModule = (() => {
                 <button type="submit" class="btn btn-primary">${isNew ? 'Salvar Crédito' : 'Salvar Alterações'}</button>
             </form>
         `;
+
         const clientCodeInput = document.getElementById('clientCode');
         const productCodeInput = document.getElementById('productCode');
         const descriptionInput = document.getElementById('description');
+        const quantityInput = document.getElementById('quantity');
+
         const fetchClientData = async () => {
             const code = clientCodeInput.value;
             if (!code) return;
@@ -257,28 +261,41 @@ const CreditosModule = (() => {
                 document.getElementById('sellerName').value = '';
             }
         };
+
         const fetchProductData = async () => {
             const code = productCodeInput.value;
             if (!code) {
                 descriptionInput.readOnly = false;
+                quantityInput.required = false;
                 return;
             }
-            const { data: product } = await supabase.from('products_erp').select('product_name').eq('product_code', code).single();
-            if (product) {
-                descriptionInput.value = product.product_name;
-                descriptionInput.readOnly = true;
-                document.getElementById('quantity').required = true;
-            } else {
+            try {
+                const { data: product, error } = await supabase.from('products_erp').select('product_name').eq('product_code', code).single();
+                if (error && error.code !== 'PGRST116') throw error;
+
+                if (product) {
+                    descriptionInput.value = product.product_name;
+                    descriptionInput.readOnly = true;
+                    quantityInput.required = true;
+                } else {
+                    descriptionInput.readOnly = false;
+                    quantityInput.required = false;
+                }
+            } catch (err) {
+                console.error("Erro ao buscar produto:", err);
                 descriptionInput.readOnly = false;
-                document.getElementById('quantity').required = false;
+                quantityInput.required = false;
             }
         };
+
         clientCodeInput.addEventListener('blur', fetchClientData);
         productCodeInput.addEventListener('blur', fetchProductData);
+
         if (credit) {
             await fetchClientData();
             await fetchProductData();
         }
+
         document.getElementById('credit-form').addEventListener('submit', handleFormSubmit);
         document.getElementById('modal-container').classList.add('active');
     };
@@ -434,6 +451,7 @@ const CreditosModule = (() => {
                 client_name: document.getElementById('filter-client-name').value,
                 status: document.getElementById('filter-status').value,
                 seller_id: document.getElementById('filter-seller').value,
+                date_type: document.getElementById('filter-date-type').value,
                 date_start: document.getElementById('filter-date-start').value,
                 date_end: document.getElementById('filter-date-end').value,
             };
@@ -441,9 +459,7 @@ const CreditosModule = (() => {
         });
         document.getElementById('btn-multi-abate').addEventListener('click', () => {
             const ids = Array.from(selectedCredits.keys());
-            if (ids.length > 0) {
-                renderAbateModal(ids);
-            }
+            if (ids.length > 0) renderAbateModal(ids);
         });
         const table = document.getElementById('credits-list');
         table.addEventListener('click', async (e) => {
@@ -455,15 +471,13 @@ const CreditosModule = (() => {
                     const { data: credit } = await supabase.from('credits').select('*, clients_erp(client_name)').eq('id', id).single();
                     renderCreditModal(credit);
                 }
-                if (action === 'abater') {
-                    renderAbateModal([id]);
-                }
+                if (action === 'abater') renderAbateModal([id]);
             }
             if (target.classList.contains('credit-select')) {
                 const id = target.dataset.id;
                 if (target.checked) {
                     const { data: credit } = await supabase.from('credits').select('id, value').eq('id', id).single();
-                    selectedCredits.set(id, credit);
+                    if (credit) selectedCredits.set(id, credit);
                 } else {
                     selectedCredits.delete(id);
                 }
@@ -478,7 +492,7 @@ const CreditosModule = (() => {
                 const creditIds = Array.from(checkboxes).map(cb => cb.dataset.id);
                 if (creditIds.length > 0) {
                     const { data: credits } = await supabase.from('credits').select('id, value').in('id', creditIds);
-                    credits.forEach(c => selectedCredits.set(c.id, c));
+                    if (credits) credits.forEach(c => selectedCredits.set(c.id, c));
                 }
             }
             checkboxes.forEach(checkbox => checkbox.checked = isChecked);
