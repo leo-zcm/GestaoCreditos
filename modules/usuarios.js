@@ -1,8 +1,14 @@
-// modules/usuarios.js (VERSÃO CORRIGIDA E SIMPLIFICADA)
+// modules/usuarios.js (VERSÃO PREPARADA PARA CRÉDITOS E WIDGETS)
 
 const UsuariosModule = (() => {
-    // ... (O conteúdo de ALL_PERMISSIONS e ALL_ROLES permanece o mesmo)
     const ALL_PERMISSIONS = {
+        // <<< ALTERAÇÃO AQUI: Nova permissão para o botão da Home >>>
+        home: {
+            label: 'Tela Inicial',
+            perms: {
+                manage_widgets: 'Gerenciar Avisos e Links'
+            }
+        },
         comprovantes: {
             label: 'Comprovantes',
             perms: {
@@ -28,7 +34,6 @@ const UsuariosModule = (() => {
     const ALL_ROLES = ['VENDEDOR', 'CAIXA', 'FINANCEIRO', 'FATURISTA', 'GARANTIA'];
 
     const renderUserModal = (user = null) => {
-        // ... (Esta função inteira permanece a mesma, sem alterações)
         const modalBody = document.getElementById('modal-body');
         const isNewUser = user === null;
         const userPerms = user?.permissions || {};
@@ -76,6 +81,11 @@ const UsuariosModule = (() => {
                     <label for="username">Usuário (somente maiúsculas)</label>
                     <input type="text" id="username" value="${user ? user.username : ''}" ${!isNewUser ? 'disabled' : ''} style="text-transform: uppercase;" required>
                 </div>
+                <!-- <<< ALTERAÇÃO AQUI: Novo campo para ID de Vendedor >>> -->
+                <div class="form-group">
+                    <label for="sellerIdErp">ID de Vendedor (ERP)</label>
+                    <input type="text" id="sellerIdErp" value="${user?.seller_id_erp || ''}" style="text-transform: uppercase;">
+                </div>
                 ${isNewUser ? `
                 <div class="form-group">
                     <label for="password">Senha</label>
@@ -97,14 +107,14 @@ const UsuariosModule = (() => {
 
     const handleFormSubmit = async (e) => {
         e.preventDefault();
-        // REMOVIDO: App.showLoader();
         document.getElementById('modal-error').textContent = '';
         
         const form = e.target;
-        // ... (lógica interna do formulário permanece a mesma)
         const userId = form.userId.value;
         const fullName = form.fullName.value;
         const username = form.username.value.toUpperCase();
+        // <<< ALTERAÇÃO AQUI: Captura do valor do novo campo >>>
+        const sellerIdErp = form.sellerIdErp.value.toUpperCase() || null; // Garante que seja nulo se vazio
         const selectedRoles = Array.from(form.querySelectorAll('input[name="roles"]:checked')).map(cb => cb.value);
 
         const newPermissions = {};
@@ -120,7 +130,13 @@ const UsuariosModule = (() => {
         }
 
         try {
-            const profileData = { full_name: fullName, roles: selectedRoles, permissions: newPermissions };
+            // <<< ALTERAÇÃO AQUI: Adiciona seller_id_erp ao objeto de dados >>>
+            const profileData = { 
+                full_name: fullName, 
+                roles: selectedRoles, 
+                permissions: newPermissions,
+                seller_id_erp: sellerIdErp 
+            };
             if (userId) {
                 const { error } = await supabase.from('profiles').update(profileData).eq('id', userId);
                 if (error) throw error;
@@ -142,10 +158,7 @@ const UsuariosModule = (() => {
         } catch (error) {
             console.error('Erro ao salvar usuário:', error.message);
             document.getElementById('modal-error').textContent = error.message;
-            // Lançamos o erro para que o App.loadModule possa capturá-lo se necessário
             throw error; 
-        } finally {
-            // REMOVIDO: App.hideLoader();
         }
     };
 
@@ -163,6 +176,7 @@ const UsuariosModule = (() => {
                             <tr>
                                 <th>Nome Completo</th>
                                 <th>Usuário</th>
+                                <th>ID Vendedor</th>
                                 <th>Funções</th>
                                 <th>Ações</th>
                             </tr>
@@ -172,8 +186,6 @@ const UsuariosModule = (() => {
                 </div>
             </div>`;
 
-        // O try/catch foi removido daqui e movido para App.loadModule para centralizar o tratamento de erro.
-        // Se ocorrer um erro na busca do supabase, a promessa será rejeitada e o catch no App.loadModule irá lidar com isso.
         const { data: users, error } = await supabase
             .from('profiles')
             .select('*')
@@ -181,7 +193,6 @@ const UsuariosModule = (() => {
 
         if (error) {
             console.error("Erro ao carregar usuários:", error);
-            // Lança o erro para que o bloco catch em App.loadModule possa exibi-lo ao usuário.
             throw error;
         }
 
@@ -190,6 +201,7 @@ const UsuariosModule = (() => {
             <tr>
                 <td>${user.full_name}</td>
                 <td>${user.username}</td>
+                <td>${user.seller_id_erp || '---'}</td>
                 <td>${user.roles ? user.roles.join(', ') : 'Nenhuma'}</td>
                 <td>
                     <button class="btn btn-secondary btn-sm btn-edit-user" data-user-id="${user.id}">Editar</button>
@@ -206,7 +218,6 @@ const UsuariosModule = (() => {
                 renderUserModal(userToEdit);
             });
         });
-        // REMOVIDO: App.hideLoader();
     };
     
     return {
@@ -217,6 +228,7 @@ const UsuariosModule = (() => {
                 const style = document.createElement('style');
                 style.id = styleId;
                 style.innerHTML = `
+                    .card-header { display: flex; justify-content: space-between; align-items: center; }
                     fieldset { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 4px; }
                     legend { font-weight: bold; padding: 0 0.5rem; }
                     .roles-container, .perm-item { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.5rem; }
