@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO 100% COMPLETA, SEM OMISSÕES E COM PASTE GLOBAL)
+// modules/comprovantes.js (VERSÃO CORRIGIDA COM FUNÇÃO EXPOSTA)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -13,7 +13,13 @@ const ComprovantesModule = (() => {
     let fileToUpload = null;
     let documentPasteHandler = null;
 
-    const loadProofs = async () => {
+    const loadProofs = async (initialFilters = null) => {
+        // <<< ALTERAÇÃO AQUI: Lógica para aceitar filtros iniciais do dashboard >>>
+        if (initialFilters && initialFilters.status) {
+            currentFilters.status = initialFilters.status;
+            document.getElementById('filter-status').value = initialFilters.status;
+        }
+
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
@@ -105,9 +111,12 @@ const ComprovantesModule = (() => {
     const renderProofModal = async (proof = null) => {
         fileToUpload = null;
         cleanupModalListeners();
-        const isNew = proof === null;
         App.showLoader();
         try {
+            const isNew = proof === null;
+            const isVendedor = App.userProfile.roles.includes('VENDEDOR');
+            const clientNameDisabled = (proof?.client_code && proof.clients_erp) || (isNew && isVendedor);
+
             const { data: paymentTypes, error } = await supabase.from('payment_types').select('*');
             if (error) throw error;
             const paymentTypesHtml = paymentTypes.map(pt => `
@@ -127,7 +136,12 @@ const ComprovantesModule = (() => {
                     </div>
                     <div class="form-group">
                         <label for="clientName">Nome do Cliente</label>
-                        <input type="text" id="clientName" value="${proof?.clients_erp?.client_name || proof?.client_name_manual || ''}" ${proof?.client_code ? 'disabled' : ''}>
+                        <input 
+                            type="text" 
+                            id="clientName" 
+                            value="${proof?.clients_erp?.client_name || proof?.client_name_manual || ''}" 
+                            placeholder="${clientNameDisabled ? 'Preencha o código do cliente' : ''}"
+                            ${clientNameDisabled ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label for="value">Valor</label>
@@ -157,18 +171,20 @@ const ComprovantesModule = (() => {
             `;
             const clientCodeInput = document.getElementById('clientCode');
             const clientNameInput = document.getElementById('clientName');
+
             const fetchClientName = async () => {
                 const code = clientCodeInput.value.toUpperCase();
                 clientCodeInput.value = code;
                 if (!code) {
                     clientNameInput.value = '';
-                    clientNameInput.disabled = false;
+                    clientNameInput.disabled = isNew && isVendedor;
                     return;
                 }
                 const { data } = await supabase.from('clients_erp').select('client_name').eq('client_code', code).single();
                 clientNameInput.value = data ? data.client_name : 'Cliente não encontrado';
-                clientNameInput.disabled = !!data;
+                clientNameInput.disabled = !!data || (isNew && isVendedor);
             };
+
             clientCodeInput.addEventListener('blur', fetchClientName);
             const dropArea = document.getElementById('file-drop-area');
             const fileInput = document.getElementById('file-input');
@@ -294,7 +310,10 @@ const ComprovantesModule = (() => {
             }
             cleanupModalListeners();
             document.getElementById('modal-container').classList.remove('active');
-            await loadProofs();
+            // Se o usuário estiver na home, não recarrega a tabela, pois ela não existe lá.
+            if (document.getElementById('proofs-list')) {
+                await loadProofs();
+            }
         } catch (error) {
             console.error("Erro ao salvar comprovante:", error);
             errorP.textContent = error.message;
@@ -370,7 +389,7 @@ const ComprovantesModule = (() => {
         }
     };
 
-    const render = async () => {
+    const render = async (initialFilters = null) => {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
             <div class="card">
@@ -418,12 +437,13 @@ const ComprovantesModule = (() => {
             loadProofs();
         });
         document.getElementById('proofs-list').addEventListener('click', handleTableClick);
-        await loadProofs();
+        await loadProofs(initialFilters);
     };
     
     return {
         name: 'Comprovantes',
         render,
-        cleanupModalListeners
+        cleanupModalListeners,
+        renderProofModal // <<< CORREÇÃO AQUI: Expondo a função para ser pública
     };
 })();
