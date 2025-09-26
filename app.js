@@ -1,4 +1,4 @@
-// app.js (VERSÃO COMPLETA, COM DASHBOARD DINÂMICO, REALTIME E GERENCIADOR DE WIDGETS)
+// app.js (VERSÃO 100% COMPLETA E CORRIGIDA)
 
 const App = {
     userProfile: null,
@@ -7,7 +7,7 @@ const App = {
     modules: {
         usuarios: UsuariosModule,
         comprovantes: ComprovantesModule,
-        creditos: CreditosModule,
+        creditos: CreditosModule
     },
     moduleConfig: [
         { key: 'comprovantes', name: 'Comprovantes', permissionCheck: (user) => user.permissions?.comprovantes?.view },
@@ -97,7 +97,7 @@ const App = {
             : '';
 
         let dashboardHtml = `
-            <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
                 ${managementButtonHtml}
             </div>`;
@@ -130,16 +130,8 @@ const App = {
     },
 
     async _renderVendedorDashboard() {
-        const { data: avisos } = await supabase
-            .from('avisos')
-            .select('content')
-            .eq('is_active', true)
-            .gt('expires_at', new Date().toISOString());
-        
-        const avisosHtml = avisos && avisos.length > 0 
-            ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` 
-            : '<p>Nenhum aviso no momento.</p>';
-
+        const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
+        const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
         return `
             <div class="dashboard-section">
                 <div class="dashboard-grid">
@@ -152,29 +144,17 @@ const App = {
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
-                            <label for="home-client-code">Código do Cliente</label>
-                            <input type="text" id="home-client-code" placeholder="Digite o código">
+                            <label for="vendedor-client-code">Código do Cliente</label>
+                            <input type="text" id="vendedor-client-code" placeholder="Digite o código">
                         </div>
                         <button class="btn btn-secondary" disabled>Buscar</button>
-                        <div class="search-result">
-                            <p>-- Status do cliente --</p>
-                        </div>
+                        <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
-                    <div class="card stat-card is-info" style="cursor: default;">
-                        <div id="widget-vendedor-creditos" class="stat-number">--</div>
-                        <div class="stat-label">Clientes com Crédito</div>
-                    </div>
-                     <div class="card stat-card is-warning" style="cursor: default;">
-                        <div id="widget-vendedor-solicitacoes" class="stat-number">--</div>
-                        <div class="stat-label">Solicitações Pendentes</div>
-                    </div>
-                    <div class="card avisos-card">
-                        <h3>Avisos</h3>
-                        ${avisosHtml}
-                    </div>
+                    <div class="card stat-card is-info" style="cursor: default;"><div id="widget-vendedor-creditos" class="stat-number">--</div><div class="stat-label">Clientes com Crédito</div></div>
+                    <div class="card stat-card is-warning" style="cursor: default;"><div id="widget-vendedor-solicitacoes" class="stat-number">--</div><div class="stat-label">Solicitações Pendentes</div></div>
+                    <div class="card avisos-card"><h3>Avisos</h3>${avisosHtml}</div>
                 </div>
-            </div>
-        `;
+            </div>`;
     },
 
     _renderCaixaDashboard() {
@@ -213,28 +193,36 @@ const App = {
             <div class="dashboard-section">
                 <h3>Painel do Faturista</h3>
                 <div class="dashboard-grid">
-                     <div class="card quick-action-card">
-                        <button class="btn btn-primary" disabled>Inserir Novo Crédito</button>
-                    </div>
+                     <div class="card quick-action-card"><button class="btn btn-primary" disabled>Inserir Novo Crédito</button></div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
-                            <label for="home-client-code">Código do Cliente</label>
-                            <input type="text" id="home-client-code" placeholder="Digite o código">
+                            <label for="faturista-client-code">Código do Cliente</label>
+                            <input type="text" id="faturista-client-code" placeholder="Digite o código">
                         </div>
                         <button class="btn btn-secondary" disabled>Buscar</button>
                     </div>
-                    <div id="widget-confirmed" class="card stat-card is-info" data-status-filter="CONFIRMADO">
-                        <div id="widget-confirmed-count" class="stat-number">...</div>
-                        <div class="stat-label">Pagamentos Confirmados para Faturar</div>
-                    </div>
+                    <div id="widget-confirmed" class="card stat-card is-info" data-status-filter="CONFIRMADO"><div id="widget-confirmed-count" class="stat-number">...</div><div class="stat-label">Pagamentos Confirmados para Faturar</div></div>
                 </div>
-            </div>
-        `;
+            </div>`;
     },
 
     _renderGarantiaDashboard() {
-        return this._renderFaturistaDashboard();
+        return `
+            <div class="dashboard-section">
+                <h3>Painel da Garantia</h3>
+                <div class="dashboard-grid">
+                    <div class="card quick-action-card"><button class="btn btn-primary" disabled>Inserir Novo Crédito</button></div>
+                    <div class="card search-card">
+                        <h3>Consultar Créditos</h3>
+                        <div class="form-group">
+                            <label for="garantia-client-code">Código do Cliente</label>
+                            <input type="text" id="garantia-client-code" placeholder="Digite o código">
+                        </div>
+                        <button class="btn btn-secondary" disabled>Buscar</button>
+                    </div>
+                </div>
+            </div>`;
     },
 
     setupHomeEventListeners() {
@@ -355,9 +343,9 @@ const App = {
                     <label for="avisoExpires">Data de Expiração</label>
                     <input type="date" id="avisoExpires" value="${expiresDate}" required>
                 </div>
-                <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
-                    <input type="checkbox" id="avisoActive" ${aviso?.is_active ?? true ? 'checked' : ''} style="width: auto;">
-                    <label for="avisoActive" style="margin-bottom: 0;">Ativo</label>
+                <div class="form-group">
+                    <input type="checkbox" id="avisoActive" ${aviso?.is_active ?? true ? 'checked' : ''}>
+                    <label for="avisoActive">Ativo</label>
                 </div>
                 <button type="submit" class="btn btn-primary">Salvar</button>
                 <button type="button" class="btn btn-secondary" id="back-to-management">Voltar</button>
@@ -447,10 +435,8 @@ const App = {
         if (data) {
             const pendingEl = document.getElementById('widget-pending-count');
             if (pendingEl) pendingEl.textContent = data.pending_proofs;
-
             const confirmedEl = document.getElementById('widget-confirmed-count');
             if (confirmedEl) confirmedEl.textContent = data.confirmed_proofs;
-
             const faturadoEl = document.getElementById('widget-faturado-count');
             if (faturadoEl) faturadoEl.textContent = data.faturado_proofs;
         }
