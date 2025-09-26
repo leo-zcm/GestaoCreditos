@@ -7,6 +7,7 @@ const App = {
     modules: {
         usuarios: UsuariosModule,
         comprovantes: ComprovantesModule,
+        creditos: CreditosModule,
     },
     moduleConfig: [
         { key: 'comprovantes', name: 'Comprovantes', permissionCheck: (user) => user.permissions?.comprovantes?.view },
