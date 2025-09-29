@@ -4,6 +4,7 @@ const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
+    
     const render = async (initialFilters = null) => {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
@@ -70,24 +71,31 @@ const CreditosModule = (() => {
             `;
             document.head.appendChild(style);
         }
-
+    
         const userPermissions = App.userProfile.permissions?.creditos || {};
+        // A variável 'isOwnView' determina se a trava deve ser aplicada
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-
+    
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
+        // Se for visão própria, força o filtro para o ID do vendedor logado
         if (isOwnView) {
             currentFilters.seller_id = App.userProfile.seller_id_erp;
         }
-
+    
         await populateSellersDropdown();
-
+    
         const sellerDropdown = document.getElementById('filter-seller');
+        // Pré-seleciona o valor correto no dropdown
         sellerDropdown.value = currentFilters.seller_id || '';
+        
+        // <<< INÍCIO DA CORREÇÃO >>>
+        // Se a permissão for "Apenas próprios", desabilita o dropdown para o usuário não poder alterar.
         if (isOwnView) {
             sellerDropdown.disabled = true;
         }
+        // <<< FIM DA CORREÇÃO >>>
         
         setupEventListeners();
         await loadCredits();
