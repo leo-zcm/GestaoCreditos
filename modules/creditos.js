@@ -1,14 +1,10 @@
-// modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
+// modules/creditos.js (VERSÃO COM INTEGRAÇÃO DA HOME E PERMISSÕES VERIFICADAS)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
     const render = async (initialFilters = null) => {
-        if (initialFilters) {
-            currentFilters = { ...currentFilters, ...initialFilters };
-        }
-    
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
             <div class="card">
@@ -20,7 +16,7 @@ const CreditosModule = (() => {
                     <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
                     <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
                     <select id="filter-status">
-                        <option value="Disponível" selected>Disponível</option>
+                        <option value="Disponível">Disponível</option>
                         <option value="Abatido">Abatido</option>
                     </select>
                     <select id="filter-seller"></select>
@@ -48,9 +44,7 @@ const CreditosModule = (() => {
                                 <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
-                        <tbody id="credits-list">
-                            <tr><td colspan="10">Utilize os filtros acima para buscar os créditos.</td></tr>
-                        </tbody>
+                        <tbody id="credits-list"></tbody>
                     </table>
                 </div>
                 <div id="selection-summary" class="selection-summary">
@@ -79,6 +73,7 @@ const CreditosModule = (() => {
     
         await populateSellersDropdown();
         setupEventListeners();
+        await loadCredits(initialFilters);
     };
 
     const populateSellersDropdown = async () => {
@@ -110,32 +105,35 @@ const CreditosModule = (() => {
         }
     };
 
-    const loadCredits = async () => {
+    const loadCredits = async (initialFilters = null) => {
         App.showLoader();
+        
+        if (initialFilters) {
+            currentFilters = { ...currentFilters, ...initialFilters };
+        }
+
+        document.getElementById('filter-client-code').value = currentFilters.client_code || '';
+        document.getElementById('filter-client-name').value = currentFilters.client_name || '';
+        document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
+        
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
     
         try {
             const userPermissions = App.userProfile.permissions?.creditos || {};
-            // <<< MUDANÇA IMPORTANTE: O select agora precisa ser explícito para o filtro funcionar >>>
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            // Lógica de permissão de visualização (own vs all)
             if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
                 query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
                 document.getElementById('filter-seller').disabled = true;
             } else {
                 const sellerFilter = currentFilters.seller_id;
-                // <<< CORREÇÃO: Lógica de filtro refeita para ser mais simples e robusta >>>
                 if (sellerFilter) {
-                    // Filtra diretamente na tabela relacionada. É mais eficiente e confiável.
                     query = query.eq('clients_erp.id_vendedor', sellerFilter);
                 }
-                // Se sellerFilter for vazio ("Todos Vendedores"), nenhum filtro de vendedor é aplicado.
             }
     
-            // Aplica os outros filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
@@ -146,7 +144,6 @@ const CreditosModule = (() => {
             let { data: credits, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
     
-            // O filtro por nome do cliente agora pode ser feito no front-end, pois os dados já foram retornados
             if (currentFilters.client_name) {
                 credits = credits.filter(c => 
                     c.clients_erp?.client_name && c.clients_erp.client_name.toLowerCase().includes(currentFilters.client_name.toLowerCase())
