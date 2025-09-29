@@ -8,7 +8,7 @@ const CreditosModule = (() => {
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
-
+    
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
             <div class="card">
@@ -48,7 +48,10 @@ const CreditosModule = (() => {
                                 <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
-                        <tbody id="credits-list"></tbody>
+                        <tbody id="credits-list">
+                            <!-- Mensagem inicial -->
+                            <tr><td colspan="10">Utilize os filtros acima para buscar os créditos.</td></tr>
+                        </tbody>
                     </table>
                 </div>
                 <div id="selection-summary" class="selection-summary">
@@ -57,6 +60,28 @@ const CreditosModule = (() => {
                 </div>
             </div>
         `;
+    
+        const styleId = 'creditos-module-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                #credits-table { font-size: 0.9rem; table-layout: fixed; width: 100%; }
+                #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+                .col-select { width: 40px; text-align: center; }
+                .col-qtd { width: 60px; text-align: center; }
+                .col-pedido { width: 120px; } 
+                .col-actions { width: 180px; }
+                .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
+                .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
+            `;
+            document.head.appendChild(style);
+        }
+    
+        await populateSellersDropdown();
+        setupEventListeners();
+        // A chamada para loadCredits() foi removida daqui.
+    };
 
         const styleId = 'creditos-module-style';
         if (!document.getElementById(styleId)) {
@@ -105,10 +130,6 @@ const CreditosModule = (() => {
 
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
-        
-        // Usamos uma RPC (Remote Procedure Call) para buscar os vendedores de forma única.
-        // Isso é mais eficiente e garante que não haja duplicatas.
-        // Primeiro, precisamos criar essa função no Supabase.
         const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
     
         if (error) {
@@ -117,12 +138,17 @@ const CreditosModule = (() => {
             return;
         }
     
-        // Ordena os vendedores pelo nome no lado do cliente
         sellers.sort((a, b) => a.full_name.localeCompare(b.full_name));
     
+        // Adiciona as opções padrão primeiro
         let options = '<option value="">Todos Vendedores</option>';
+        options += '<option value="ZE_CLEUTO">ZE CLEUTO</option>'; // Adiciona a opção especial
+    
         sellers.forEach(s => {
-            options += `<option value="${s.seller_id_erp}">${s.full_name}</option>`;
+            // Remove a opção "ASSISTENTE DE VENDAS" (ID 1) da lista
+            if (s.seller_id_erp !== '1') {
+                options += `<option value="${s.seller_id_erp}">${s.full_name}</option>`;
+            }
         });
         sellerSelect.innerHTML = options;
     };
@@ -133,39 +159,49 @@ const CreditosModule = (() => {
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
     
         try {
-            const userPermissions = App.userProfile.permissions?.creditos || {};
+            const userPermissions = App.user_profile.permissions?.creditos || {};
             const selectStatement = `*, clients_erp(client_name)`;
             let query = supabase.from('credits').select(selectStatement);
     
+            // Lógica de permissão de visualização (own vs all)
+            if (userPermissions.view === 'own' && App.user_profile.seller_id_erp) {
+                const { data: clientCodes, error: clientError } = await supabase
+                    .from('clients_erp').select('client_code').eq('id_vendedor', App.user_profile.seller_id_erp);
+                if (clientError) throw clientError;
+                const codes = clientCodes.map(c => c.client_code);
+                if (codes.length === 0) { renderTable([]); return; }
+                query = query.in('client_code', codes);
+                document.getElementById('filter-seller').disabled = true;
+            } else {
+                // Lógica de filtro do dropdown de vendedor
+                const sellerFilter = currentFilters.seller_id;
+                if (sellerFilter === 'ZE_CLEUTO') {
+                    // Caso especial: Busca clientes cujo vendedor NÃO é o ID 1
+                    const { data: clientCodes, error: clientError } = await supabase
+                        .from('clients_erp').select('client_code').neq('id_vendedor', '1');
+                    if (clientError) throw clientError;
+                    const codes = clientCodes.map(c => c.client_code);
+                    if (codes.length === 0) { renderTable([]); return; }
+                    query = query.in('client_code', codes);
+                } else if (sellerFilter) {
+                    // Filtro padrão por ID de vendedor
+                    const { data: clientCodes, error: clientError } = await supabase
+                        .from('clients_erp').select('client_code').eq('id_vendedor', sellerFilter);
+                    if (clientError) throw clientError;
+                    const codes = clientCodes.map(c => c.client_code);
+                    if (codes.length === 0) { renderTable([]); return; }
+                    query = query.in('client_code', codes);
+                }
+                // Se sellerFilter for vazio ("Todos Vendedores"), nenhum filtro de vendedor é aplicado.
+            }
+    
+            // Aplica os outros filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
             const dateColumn = currentFilters.date_type || 'created_at';
             if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
-    
-            // 🔹 Converte o valor do filtro de vendedor para número (ou null)
-            let sellerErpIdToFilter = currentFilters.seller_id ? parseInt(currentFilters.seller_id, 10) : null;
-    
-            if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
-                sellerErpIdToFilter = App.userProfile.seller_id_erp;
-                document.getElementById('filter-seller').value = sellerErpIdToFilter;
-                document.getElementById('filter-seller').disabled = true;
-            }
-    
-            if (sellerErpIdToFilter) {
-                const { data: clientCodes, error: clientError } = await supabase
-                    .from('clients_erp')
-                    .select('client_code')
-                    .eq('id_vendedor', sellerErpIdToFilter);
-    
-                if (clientError) throw clientError;
-    
-                const codes = clientCodes.map(c => c.client_code);
-                if (codes.length === 0) { renderTable([]); return; }
-    
-                query = query.in('client_code', codes);
-            }
     
             let { data: credits, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
