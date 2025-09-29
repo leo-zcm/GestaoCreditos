@@ -251,7 +251,7 @@ const CreditosModule = (() => {
             if (client) {
                 document.getElementById('clientName').value = client.client_name;
                 if (client.id_vendedor) {
-                    const { data: seller } = await supabase.from('profiles').select('full_name').eq('seller_id_erp', client.id_vendedor).single();
+                    const { data: seller } = await supabase.from('profiles').select('full_name').eq('seller_id_erp', client.id_vendedor).limit(1).single();
                     document.getElementById('sellerName').value = seller ? seller.full_name : 'Vendedor não encontrado';
                 } else {
                     document.getElementById('sellerName').value = 'Cliente sem vendedor';
