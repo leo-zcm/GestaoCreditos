@@ -105,17 +105,21 @@ const CreditosModule = (() => {
 
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
-        const { data: sellers, error } = await supabase
-            .from('profiles')
-            .select('full_name, seller_id_erp')
-            .not('seller_id_erp', 'is', null)
-            .order('full_name');
-
+        
+        // Usamos uma RPC (Remote Procedure Call) para buscar os vendedores de forma única.
+        // Isso é mais eficiente e garante que não haja duplicatas.
+        // Primeiro, precisamos criar essa função no Supabase.
+        const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
+    
         if (error) {
-            console.error("Erro ao buscar vendedores:", error);
+            console.error("Erro ao buscar vendedores únicos:", error);
+            sellerSelect.innerHTML = '<option value="">Erro ao carregar</option>';
             return;
         }
-
+    
+        // Ordena os vendedores pelo nome no lado do cliente
+        sellers.sort((a, b) => a.full_name.localeCompare(b.full_name));
+    
         let options = '<option value="">Todos Vendedores</option>';
         sellers.forEach(s => {
             options += `<option value="${s.seller_id_erp}">${s.full_name}</option>`;
