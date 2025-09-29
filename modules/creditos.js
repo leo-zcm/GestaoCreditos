@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM FEEDBACK VISUAL DE FILTROS DA HOME)
+// modules/creditos.js (VERSÃO COM PERMISSÕES DE VENDEDOR CORRIGIDAS E TRAVADAS)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -105,7 +105,7 @@ const CreditosModule = (() => {
         }
     };
 
-    // <<< ALTERAÇÃO AQUI: Lógica aprimorada para atualizar a UI com os filtros iniciais >>>
+    // <<< CORREÇÃO AQUI: Lógica de permissão robusta para travar o filtro de vendedor >>>
     const loadCredits = async (initialFilters = null) => {
         App.showLoader();
         
@@ -113,30 +113,35 @@ const CreditosModule = (() => {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
 
-        // ATUALIZA A UI: Garante que os campos de filtro reflitam o estado atual
+        const userPermissions = App.userProfile.permissions?.creditos || {};
+        const sellerDropdown = document.getElementById('filter-seller');
+
+        // Lógica de permissão: trava o filtro se a permissão for 'own'
+        if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
+            // Força o filtro a ser o do vendedor logado, ignorando qualquer outro valor
+            currentFilters.seller_id = App.userProfile.seller_id_erp;
+            sellerDropdown.value = App.userProfile.seller_id_erp;
+            sellerDropdown.disabled = true;
+        } else {
+            sellerDropdown.disabled = false;
+        }
+
+        // Atualiza a UI para refletir o estado atual dos filtros
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
-        document.getElementById('filter-seller').value = currentFilters.seller_id || '';
+        sellerDropdown.value = currentFilters.seller_id || ''; // Garante que o dropdown reflita o filtro
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
     
         try {
-            const userPermissions = App.userProfile.permissions?.creditos || {};
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
-                query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
-                const sellerDropdown = document.getElementById('filter-seller');
-                sellerDropdown.value = App.userProfile.seller_id_erp;
-                sellerDropdown.disabled = true;
-            } else {
-                const sellerFilter = currentFilters.seller_id;
-                if (sellerFilter) {
-                    query = query.eq('clients_erp.id_vendedor', sellerFilter);
-                }
+            // Aplica o filtro de vendedor (que já foi validado pela permissão acima)
+            if (currentFilters.seller_id) {
+                query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
             }
     
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
