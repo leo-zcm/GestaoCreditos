@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM SEGURANÇA REFORÇADA E OTIMIZAÇÃO MOBILE)
+// modules/creditos.js (VERSÃO FINAL COM SEGURANÇA BLINDADA E UI ADAPTATIVA)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -6,6 +6,35 @@ const CreditosModule = (() => {
 
     const render = async (initialFilters = null) => {
         const contentArea = document.getElementById('content-area');
+
+        // ETAPA 1: VERIFICAÇÃO DE PERMISSÃO ANTES DE QUALQUER COISA
+        const userPermissions = App.userProfile.permissions?.creditos || {};
+        const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
+
+        // Log de diagnóstico para depuração final
+        console.log('[CreditosModule] VERIFICAÇÃO FINAL DE PERMISSÃO:', {
+            'Permissão (creditos.view)': userPermissions.view,
+            'ID de Vendedor (seller_id_erp)': App.userProfile.seller_id_erp,
+            'Resultado (isOwnView)': isOwnView
+        });
+
+        // ETAPA 2: RENDERIZAÇÃO CONDICIONAL DA UI DO FILTRO
+        let sellerFilterHtml;
+        if (isOwnView) {
+            // Se for visão própria, renderiza um campo de texto desabilitado
+            sellerFilterHtml = `
+                <input 
+                    type="text" 
+                    id="filter-seller-locked" 
+                    value="${App.userProfile.full_name || 'Meu Usuário'}" 
+                    disabled 
+                    title="Você só pode visualizar seus próprios créditos."
+                >`;
+        } else {
+            // Caso contrário, renderiza o dropdown normal
+            sellerFilterHtml = `<select id="filter-seller"></select>`;
+        }
+
         contentArea.innerHTML = `
             <div class="card">
                 <div class="card-header">
@@ -19,7 +48,7 @@ const CreditosModule = (() => {
                         <option value="Disponível">Disponível</option>
                         <option value="Abatido">Abatido</option>
                     </select>
-                    <select id="filter-seller"></select>
+                    ${sellerFilterHtml} 
                     <select id="filter-date-type" title="Tipo de Data">
                         <option value="created_at" selected>Data de Criação</option>
                         <option value="abated_at">Data de Abatimento</option>
@@ -68,76 +97,28 @@ const CreditosModule = (() => {
                 .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
                 .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
 
-                /* <<< INÍCIO DA OTIMIZAÇÃO PARA CELULAR >>> */
                 @media (max-width: 992px) {
-                    #credits-table thead {
-                        display: none; /* Esconde o cabeçalho da tabela */
-                    }
-                    #credits-table, #credits-table tbody, #credits-table tr, #credits-table td {
-                        display: block; /* Transforma tudo em blocos */
-                        width: 100%;
-                    }
-                    #credits-table tr {
-                        margin-bottom: 1rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: 8px;
-                        padding: 0.5rem;
-                    }
-                    #credits-table td {
-                        text-align: right; /* Alinha o conteúdo à direita */
-                        position: relative;
-                        padding-left: 50%; /* Deixa espaço para o rótulo */
-                        white-space: normal;
-                        overflow: visible;
-                        text-overflow: clip;
-                        border-bottom: 1px solid var(--light-color);
-                    }
-                    #credits-table td:last-child {
-                        border-bottom: none;
-                    }
-                    #credits-table td::before {
-                        content: attr(data-label); /* Pega o texto do atributo data-label */
-                        position: absolute;
-                        left: 0.5rem;
-                        width: 45%;
-                        padding-right: 1rem;
-                        font-weight: bold;
-                        text-align: left;
-                    }
-                    #credits-table td.col-actions .action-buttons {
-                        justify-content: flex-end; /* Mantém botões à direita no card */
-                    }
+                    #credits-table thead { display: none; }
+                    #credits-table, #credits-table tbody, #credits-table tr, #credits-table td { display: block; width: 100%; }
+                    #credits-table tr { margin-bottom: 1rem; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.5rem; }
+                    #credits-table td { text-align: right; position: relative; padding-left: 50%; white-space: normal; overflow: visible; text-overflow: clip; border-bottom: 1px solid var(--light-color); }
+                    #credits-table td:last-child { border-bottom: none; }
+                    #credits-table td::before { content: attr(data-label); position: absolute; left: 0.5rem; width: 45%; padding-right: 1rem; font-weight: bold; text-align: left; }
+                    #credits-table td.col-actions .action-buttons { justify-content: flex-end; }
                 }
-                /* <<< FIM DA OTIMIZAÇÃO PARA CELULAR >>> */
             `;
             document.head.appendChild(style);
         }
 
-        const userPermissions = App.userProfile.permissions?.creditos || {};
-        const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-
-        // <<< INÍCIO DO DIAGNÓSTICO >>>
-        // Este log é crucial para você depurar. Abra o console do navegador (F12) e veja os valores.
-        console.log('[CreditosModule] Verificando permissões de visualização:', {
-            'Permissão (creditos.view)': userPermissions.view,
-            'ID de Vendedor (seller_id_erp)': App.userProfile.seller_id_erp,
-            'Resultado (isOwnView)': isOwnView
-        });
-        // <<< FIM DO DIAGNÓSTICO >>>
-
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
-        if (isOwnView) {
-            currentFilters.seller_id = App.userProfile.seller_id_erp;
-        }
-
-        await populateSellersDropdown();
-
-        const sellerDropdown = document.getElementById('filter-seller');
-        sellerDropdown.value = currentFilters.seller_id || '';
-        if (isOwnView) {
-            sellerDropdown.disabled = true; // Aplica a trava visual no frontend
+        
+        // Popula o dropdown apenas se ele existir (não for 'isOwnView')
+        if (!isOwnView) {
+            await populateSellersDropdown();
+            const sellerDropdown = document.getElementById('filter-seller');
+            sellerDropdown.value = currentFilters.seller_id || '';
         }
         
         setupEventListeners();
@@ -146,6 +127,7 @@ const CreditosModule = (() => {
 
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
+        if (!sellerSelect) return; // Segurança extra
         sellerSelect.innerHTML = '<option value="">Carregando...</option>';
         try {
             const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
@@ -179,11 +161,9 @@ const CreditosModule = (() => {
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
 
-        // Atualiza a UI dos filtros com os valores atuais
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
-        document.getElementById('filter-seller').value = currentFilters.seller_id || '';
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
@@ -192,17 +172,16 @@ const CreditosModule = (() => {
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            // <<< INÍCIO DA SEGURANÇA NO BACKEND >>>
-            // Se a permissão for "Apenas próprios", a consulta JÁ SAI FILTRADA do Supabase.
-            // Isso é inviolável pelo frontend.
+            // ETAPA 3: CONSULTA BLINDADA
             if (isOwnView) {
+                // FORÇA o filtro pelo ID do vendedor logado, ignorando a UI.
                 query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
-            } 
-            // Se não for 'isOwnView', aplica o filtro selecionado pelo usuário (se houver).
-            else if (currentFilters.seller_id) {
-                query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
+            } else {
+                // Aplica o filtro da UI apenas se o usuário tiver permissão para ver todos.
+                if (currentFilters.seller_id) {
+                    query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
+                }
             }
-            // <<< FIM DA SEGURANÇA NO BACKEND >>>
 
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
@@ -241,7 +220,6 @@ const CreditosModule = (() => {
         }
         listContainer.innerHTML = credits.map(credit => {
             const isSelected = selectedCredits.has(credit.id);
-            // <<< ALTERAÇÃO PARA RESPONSIVIDADE: Adicionado 'data-label' em cada <td> >>>
             return `
                 <tr class="${isSelected ? 'selected' : ''}">
                     <td data-label="Selecionar" class="col-select"><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
@@ -520,7 +498,13 @@ const CreditosModule = (() => {
             currentFilters.client_code = document.getElementById('filter-client-code').value;
             currentFilters.client_name = document.getElementById('filter-client-name').value;
             currentFilters.status = document.getElementById('filter-status').value;
-            currentFilters.seller_id = document.getElementById('filter-seller').value;
+            
+            // Lê o filtro de vendedor apenas se o dropdown existir
+            const sellerDropdown = document.getElementById('filter-seller');
+            if (sellerDropdown) {
+                currentFilters.seller_id = sellerDropdown.value;
+            }
+
             currentFilters.date_type = document.getElementById('filter-date-type').value;
             currentFilters.date_start = document.getElementById('filter-date-start').value;
             currentFilters.date_end = document.getElementById('filter-date-end').value;
