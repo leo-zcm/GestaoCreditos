@@ -1,6 +1,7 @@
-// modules/creditos.js
+// modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
 
-const CreditosModule = () => {
+const CreditosModule = (() => {
+    // <<< CORREÇÃO: A variável de filtros é inicializada aqui para manter o estado >>>
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
@@ -71,86 +72,51 @@ const CreditosModule = () => {
                 .col-select { width: 40px; text-align: center; }
                 .col-qtd { width: 60px; text-align: center; }
                 .col-pedido { width: 120px; } 
-                .col-actions { width: 180px; }
+                .col-actions { width: 180px; text-align: right; }
                 .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
                 .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
             `;
             document.head.appendChild(style);
         }
     
+        // <<< CORREÇÃO: As chamadas async estão todas dentro da função async 'render' >>>
         await populateSellersDropdown();
         setupEventListeners();
-        // A chamada para loadCredits() foi removida daqui.
+        // A busca inicial não é mais automática para melhorar a performance. O usuário clica em "Buscar".
     };
 
-        const styleId = 'creditos-module-style';
-        if (!document.getElementById(styleId)) {
-            const style = document.createElement('style');
-            style.id = styleId;
-            style.innerHTML = `
-                #credits-table { 
-                    font-size: 0.9rem; 
-                    table-layout: fixed;
-                    width: 100%;
-                }
-                #credits-table td, #credits-table th { 
-                    padding: 0.6rem; 
-                    white-space: nowrap; 
-                    overflow: hidden; 
-                    text-overflow: ellipsis; 
-                    vertical-align: middle;
-                }
-                .col-select { width: 40px; text-align: center; }
-                .col-qtd { width: 60px; text-align: center; }
-                .col-pedido { width: 120px; }
-                .col-actions { width: 180px; }
-                .action-buttons { 
-                    display: flex; 
-                    justify-content: flex-end; 
-                    gap: 0.5rem; 
-                }
-                .selection-summary { 
-                    display: flex; 
-                    justify-content: space-between; 
-                    align-items: center; 
-                    padding: 1rem; 
-                    background-color: var(--light-color); 
-                    border-top: 1px solid var(--border-color);
-                    margin: 1rem -1.5rem -1.5rem -1.5rem;
-                    border-radius: 0 0 8px 8px;
-                }
-            `;
-            document.head.appendChild(style);
-        }
-
-        await populateSellersDropdown();
-        setupEventListeners();
-        await loadCredits();
-    };
-
+    // <<< CORREÇÃO: Lógica de popular vendedores refeita para garantir unicidade e corrigir o bug do ID 1 >>>
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
-        const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
-    
-        if (error) {
-            console.error("Erro ao buscar vendedores únicos:", error);
+        sellerSelect.innerHTML = '<option value="">Carregando...</option>';
+        try {
+            const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
+            if (error) throw error;
+
+            // Usamos um Map para garantir que cada nome de vendedor seja único na lista
+            const uniqueSellers = new Map();
+            sellers.forEach(s => {
+                if (s.full_name && !uniqueSellers.has(s.full_name)) {
+                    uniqueSellers.set(s.full_name, s.seller_id_erp);
+                }
+            });
+
+            // Converte o Map para um array, ordena por nome e cria as opções
+            const sortedSellers = Array.from(uniqueSellers.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+            let options = '<option value="">Todos Vendedores</option>';
+            options += '<option value="ZE_CLEUTO">ZE CLEUTO</option>'; // Opção especial
+
+            sortedSellers.forEach(([fullName, sellerId]) => {
+                options += `<option value="${sellerId}">${fullName}</option>`;
+            });
+            
+            sellerSelect.innerHTML = options;
+
+        } catch (err) {
+            console.error("Erro ao buscar vendedores únicos:", err);
             sellerSelect.innerHTML = '<option value="">Erro ao carregar</option>';
-            return;
         }
-    
-        sellers.sort((a, b) => a.full_name.localeCompare(b.full_name));
-    
-        // Adiciona as opções padrão primeiro
-        let options = '<option value="">Todos Vendedores</option>';
-        options += '<option value="ZE_CLEUTO">ZE CLEUTO</option>'; // Adiciona a opção especial
-    
-        sellers.forEach(s => {
-            // Remove a opção "ASSISTENTE DE VENDAS" (ID 1) da lista
-            if (s.seller_id_erp !== '1') {
-                options += `<option value="${s.seller_id_erp}">${s.full_name}</option>`;
-            }
-        });
-        sellerSelect.innerHTML = options;
     };
 
     const loadCredits = async () => {
@@ -159,14 +125,14 @@ const CreditosModule = () => {
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
     
         try {
-            const userPermissions = App.user_profile.permissions?.creditos || {};
+            const userPermissions = App.userProfile.permissions?.creditos || {};
             const selectStatement = `*, clients_erp(client_name)`;
             let query = supabase.from('credits').select(selectStatement);
     
             // Lógica de permissão de visualização (own vs all)
-            if (userPermissions.view === 'own' && App.user_profile.seller_id_erp) {
+            if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
                 const { data: clientCodes, error: clientError } = await supabase
-                    .from('clients_erp').select('client_code').eq('id_vendedor', App.user_profile.seller_id_erp);
+                    .from('clients_erp').select('client_code').eq('id_vendedor', App.userProfile.seller_id_erp);
                 if (clientError) throw clientError;
                 const codes = clientCodes.map(c => c.client_code);
                 if (codes.length === 0) { renderTable([]); return; }
@@ -176,7 +142,6 @@ const CreditosModule = () => {
                 // Lógica de filtro do dropdown de vendedor
                 const sellerFilter = currentFilters.seller_id;
                 if (sellerFilter === 'ZE_CLEUTO') {
-                    // Caso especial: Busca clientes cujo vendedor NÃO é o ID 1
                     const { data: clientCodes, error: clientError } = await supabase
                         .from('clients_erp').select('client_code').neq('id_vendedor', '1');
                     if (clientError) throw clientError;
@@ -184,7 +149,6 @@ const CreditosModule = () => {
                     if (codes.length === 0) { renderTable([]); return; }
                     query = query.in('client_code', codes);
                 } else if (sellerFilter) {
-                    // Filtro padrão por ID de vendedor
                     const { data: clientCodes, error: clientError } = await supabase
                         .from('clients_erp').select('client_code').eq('id_vendedor', sellerFilter);
                     if (clientError) throw clientError;
@@ -192,10 +156,8 @@ const CreditosModule = () => {
                     if (codes.length === 0) { renderTable([]); return; }
                     query = query.in('client_code', codes);
                 }
-                // Se sellerFilter for vazio ("Todos Vendedores"), nenhum filtro de vendedor é aplicado.
             }
     
-            // Aplica os outros filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
@@ -214,15 +176,6 @@ const CreditosModule = () => {
     
             renderTable(credits);
     
-        } catch (error) {
-            console.error("Erro ao carregar créditos:", error);
-            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
-        } finally {
-            App.hideLoader();
-            updateSelectionSummary();
-        }
-    };
-
         } catch (error) {
             console.error("Erro ao carregar créditos:", error);
             listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
