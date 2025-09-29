@@ -70,10 +70,32 @@ const CreditosModule = (() => {
             `;
             document.head.appendChild(style);
         }
-    
+
+        // <<< CORREÇÃO AQUI: Lógica de permissão e filtros movida para o início da renderização >>>
+        const userPermissions = App.userProfile.permissions?.creditos || {};
+        const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
+
+        // 1. Define o estado dos filtros com base nas permissões e filtros iniciais
+        if (initialFilters) {
+            currentFilters = { ...currentFilters, ...initialFilters };
+        }
+        if (isOwnView) {
+            // A permissão 'own' sempre sobrescreve qualquer outro filtro de vendedor
+            currentFilters.seller_id = App.userProfile.seller_id_erp;
+        }
+
+        // 2. Popula o dropdown de vendedores
         await populateSellersDropdown();
+
+        // 3. Agora que o dropdown existe, aplica o estado (valor e trava)
+        const sellerDropdown = document.getElementById('filter-seller');
+        sellerDropdown.value = currentFilters.seller_id || '';
+        if (isOwnView) {
+            sellerDropdown.disabled = true;
+        }
+        
         setupEventListeners();
-        await loadCredits(initialFilters);
+        await loadCredits(); // Carrega os dados usando os filtros já definidos
     };
 
     const populateSellersDropdown = async () => {
@@ -105,32 +127,15 @@ const CreditosModule = (() => {
         }
     };
 
-    // <<< CORREÇÃO AQUI: Lógica de permissão robusta para travar o filtro de vendedor >>>
-    const loadCredits = async (initialFilters = null) => {
+    // <<< CORREÇÃO AQUI: A função agora apenas lê o estado `currentFilters` e busca os dados >>>
+    const loadCredits = async () => {
         App.showLoader();
         
-        if (initialFilters) {
-            currentFilters = { ...currentFilters, ...initialFilters };
-        }
-
-        const userPermissions = App.userProfile.permissions?.creditos || {};
-        const sellerDropdown = document.getElementById('filter-seller');
-
-        // Lógica de permissão: trava o filtro se a permissão for 'own'
-        if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
-            // Força o filtro a ser o do vendedor logado, ignorando qualquer outro valor
-            currentFilters.seller_id = App.userProfile.seller_id_erp;
-            sellerDropdown.value = App.userProfile.seller_id_erp;
-            sellerDropdown.disabled = true;
-        } else {
-            sellerDropdown.disabled = false;
-        }
-
-        // Atualiza a UI para refletir o estado atual dos filtros
+        // Atualiza a UI dos filtros para garantir consistência
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
-        sellerDropdown.value = currentFilters.seller_id || ''; // Garante que o dropdown reflita o filtro
+        document.getElementById('filter-seller').value = currentFilters.seller_id || '';
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
@@ -139,7 +144,6 @@ const CreditosModule = (() => {
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            // Aplica o filtro de vendedor (que já foi validado pela permissão acima)
             if (currentFilters.seller_id) {
                 query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
             }
@@ -451,15 +455,13 @@ const CreditosModule = (() => {
     const setupEventListeners = () => {
         document.getElementById('btn-new-credit').addEventListener('click', () => renderCreditModal());
         document.getElementById('btn-apply-filters').addEventListener('click', () => {
-            currentFilters = {
-                client_code: document.getElementById('filter-client-code').value,
-                client_name: document.getElementById('filter-client-name').value,
-                status: document.getElementById('filter-status').value,
-                seller_id: document.getElementById('filter-seller').value,
-                date_type: document.getElementById('filter-date-type').value,
-                date_start: document.getElementById('filter-date-start').value,
-                date_end: document.getElementById('filter-date-end').value,
-            };
+            currentFilters.client_code = document.getElementById('filter-client-code').value;
+            currentFilters.client_name = document.getElementById('filter-client-name').value;
+            currentFilters.status = document.getElementById('filter-status').value;
+            currentFilters.seller_id = document.getElementById('filter-seller').value;
+            currentFilters.date_type = document.getElementById('filter-date-type').value;
+            currentFilters.date_start = document.getElementById('filter-date-start').value;
+            currentFilters.date_end = document.getElementById('filter-date-end').value;
             loadCredits();
         });
         document.getElementById('btn-multi-abate').addEventListener('click', () => {
