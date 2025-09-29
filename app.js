@@ -148,7 +148,6 @@ const App = {
                             <input type="text" id="home-search-credit-input" placeholder="Digite o código">
                         </div>
                         <button id="home-search-credit-btn" class="btn btn-secondary">Buscar</button>
-                        <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
                     <div id="widget-vendedor-creditos-card" class="card stat-card is-info">
                         <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
