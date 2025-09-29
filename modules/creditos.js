@@ -131,45 +131,61 @@ const CreditosModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
-
+    
         try {
             const userPermissions = App.userProfile.permissions?.creditos || {};
             const selectStatement = `*, clients_erp(client_name)`;
             let query = supabase.from('credits').select(selectStatement);
-
+    
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
             const dateColumn = currentFilters.date_type || 'created_at';
             if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
-
-            let sellerErpIdToFilter = currentFilters.seller_id;
+    
+            // 🔹 Converte o valor do filtro de vendedor para número (ou null)
+            let sellerErpIdToFilter = currentFilters.seller_id ? parseInt(currentFilters.seller_id, 10) : null;
+    
             if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
                 sellerErpIdToFilter = App.userProfile.seller_id_erp;
                 document.getElementById('filter-seller').value = sellerErpIdToFilter;
                 document.getElementById('filter-seller').disabled = true;
             }
-
+    
             if (sellerErpIdToFilter) {
                 const { data: clientCodes, error: clientError } = await supabase
-                    .from('clients_erp').select('client_code').eq('id_vendedor', sellerErpIdToFilter);
+                    .from('clients_erp')
+                    .select('client_code')
+                    .eq('id_vendedor', sellerErpIdToFilter);
+    
                 if (clientError) throw clientError;
+    
                 const codes = clientCodes.map(c => c.client_code);
                 if (codes.length === 0) { renderTable([]); return; }
+    
                 query = query.in('client_code', codes);
             }
-
+    
             let { data: credits, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
-
+    
             if (currentFilters.client_name) {
                 credits = credits.filter(c => 
                     c.clients_erp?.client_name && c.clients_erp.client_name.toLowerCase().includes(currentFilters.client_name.toLowerCase())
                 );
             }
-
+    
             renderTable(credits);
+    
+        } catch (error) {
+            console.error("Erro ao carregar créditos:", error);
+            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
+        } finally {
+            App.hideLoader();
+            updateSelectionSummary();
+        }
+    };
 
         } catch (error) {
             console.error("Erro ao carregar créditos:", error);
