@@ -1,10 +1,9 @@
-// modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
+// modules/creditos.js (VERSÃO COM SEGURANÇA REFORÇADA E OTIMIZAÇÃO MOBILE)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
-    
     const render = async (initialFilters = null) => {
         const contentArea = document.getElementById('content-area');
         contentArea.innerHTML = `
@@ -68,34 +67,78 @@ const CreditosModule = (() => {
                 .col-actions { width: 180px; text-align: right; }
                 .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
                 .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
+
+                /* <<< INÍCIO DA OTIMIZAÇÃO PARA CELULAR >>> */
+                @media (max-width: 992px) {
+                    #credits-table thead {
+                        display: none; /* Esconde o cabeçalho da tabela */
+                    }
+                    #credits-table, #credits-table tbody, #credits-table tr, #credits-table td {
+                        display: block; /* Transforma tudo em blocos */
+                        width: 100%;
+                    }
+                    #credits-table tr {
+                        margin-bottom: 1rem;
+                        border: 1px solid var(--border-color);
+                        border-radius: 8px;
+                        padding: 0.5rem;
+                    }
+                    #credits-table td {
+                        text-align: right; /* Alinha o conteúdo à direita */
+                        position: relative;
+                        padding-left: 50%; /* Deixa espaço para o rótulo */
+                        white-space: normal;
+                        overflow: visible;
+                        text-overflow: clip;
+                        border-bottom: 1px solid var(--light-color);
+                    }
+                    #credits-table td:last-child {
+                        border-bottom: none;
+                    }
+                    #credits-table td::before {
+                        content: attr(data-label); /* Pega o texto do atributo data-label */
+                        position: absolute;
+                        left: 0.5rem;
+                        width: 45%;
+                        padding-right: 1rem;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+                    #credits-table td.col-actions .action-buttons {
+                        justify-content: flex-end; /* Mantém botões à direita no card */
+                    }
+                }
+                /* <<< FIM DA OTIMIZAÇÃO PARA CELULAR >>> */
             `;
             document.head.appendChild(style);
         }
-    
+
         const userPermissions = App.userProfile.permissions?.creditos || {};
-        // A variável 'isOwnView' determina se a trava deve ser aplicada
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-    
+
+        // <<< INÍCIO DO DIAGNÓSTICO >>>
+        // Este log é crucial para você depurar. Abra o console do navegador (F12) e veja os valores.
+        console.log('[CreditosModule] Verificando permissões de visualização:', {
+            'Permissão (creditos.view)': userPermissions.view,
+            'ID de Vendedor (seller_id_erp)': App.userProfile.seller_id_erp,
+            'Resultado (isOwnView)': isOwnView
+        });
+        // <<< FIM DO DIAGNÓSTICO >>>
+
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
-        // Se for visão própria, força o filtro para o ID do vendedor logado
         if (isOwnView) {
             currentFilters.seller_id = App.userProfile.seller_id_erp;
         }
-    
+
         await populateSellersDropdown();
-    
+
         const sellerDropdown = document.getElementById('filter-seller');
-        // Pré-seleciona o valor correto no dropdown
         sellerDropdown.value = currentFilters.seller_id || '';
-        
-        // <<< INÍCIO DA CORREÇÃO >>>
-        // Se a permissão for "Apenas próprios", desabilita o dropdown para o usuário não poder alterar.
         if (isOwnView) {
-            sellerDropdown.disabled = true;
+            sellerDropdown.disabled = true; // Aplica a trava visual no frontend
         }
-        // <<< FIM DA CORREÇÃO >>>
         
         setupEventListeners();
         await loadCredits();
@@ -134,10 +177,9 @@ const CreditosModule = (() => {
         App.showLoader();
         
         const userPermissions = App.userProfile.permissions?.creditos || {};
-        if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
-            currentFilters.seller_id = App.userProfile.seller_id_erp;
-        }
+        const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
 
+        // Atualiza a UI dos filtros com os valores atuais
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
@@ -150,10 +192,18 @@ const CreditosModule = (() => {
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            if (currentFilters.seller_id) {
+            // <<< INÍCIO DA SEGURANÇA NO BACKEND >>>
+            // Se a permissão for "Apenas próprios", a consulta JÁ SAI FILTRADA do Supabase.
+            // Isso é inviolável pelo frontend.
+            if (isOwnView) {
+                query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
+            } 
+            // Se não for 'isOwnView', aplica o filtro selecionado pelo usuário (se houver).
+            else if (currentFilters.seller_id) {
                 query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
             }
-    
+            // <<< FIM DA SEGURANÇA NO BACKEND >>>
+
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
@@ -191,18 +241,19 @@ const CreditosModule = (() => {
         }
         listContainer.innerHTML = credits.map(credit => {
             const isSelected = selectedCredits.has(credit.id);
+            // <<< ALTERAÇÃO PARA RESPONSIVIDADE: Adicionado 'data-label' em cada <td> >>>
             return `
                 <tr class="${isSelected ? 'selected' : ''}">
-                    <td class="col-select"><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
-                    <td>${new Date(credit.created_at).toLocaleDateString()}</td>
-                    <td>${credit.n_registro || '---'}</td>
-                    <td>${credit.client_code}</td>
-                    <td title="${credit.clients_erp?.client_name || ''}">${credit.clients_erp?.client_name || 'N/A'}</td>
-                    <td title="${credit.description}">${credit.description}</td>
-                    <td class="col-qtd">${credit.quantity || '---'}</td>
-                    <td>${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                    <td class="col-pedido">${credit.abatement_order || '---'}</td>
-                    <td class="col-actions">
+                    <td data-label="Selecionar" class="col-select"><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
+                    <td data-label="Data Criação">${new Date(credit.created_at).toLocaleDateString()}</td>
+                    <td data-label="Nº Registro">${credit.n_registro || '---'}</td>
+                    <td data-label="Cód. Cliente">${credit.client_code}</td>
+                    <td data-label="Cliente" title="${credit.clients_erp?.client_name || ''}">${credit.clients_erp?.client_name || 'N/A'}</td>
+                    <td data-label="Descrição" title="${credit.description}">${credit.description}</td>
+                    <td data-label="Qtd" class="col-qtd">${credit.quantity || '---'}</td>
+                    <td data-label="Valor">${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td data-label="Ped. Abatido" class="col-pedido">${credit.abatement_order || '---'}</td>
+                    <td data-label="Ações" class="col-actions">
                         ${credit.status === 'Disponível' ? `
                             <div class="action-buttons">
                                 ${creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
