@@ -1,4 +1,4 @@
-// auth.js (CORRIGIDO - SEM RACE CONDITION + LOGIN FLUXO COMPLETO)
+// auth.js (VERSÃO FINAL E CORRIGIDA - BUSCANDO TODOS OS DADOS DO PERFIL)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
@@ -6,11 +6,15 @@ const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 async function getUserProfile(userId) {
     try {
+        // <<< INÍCIO DA CORREÇÃO CRÍTICA >>>
+        // Adicionado 'seller_id_erp' à consulta para que o perfil do usuário esteja completo.
         const { data: profile, error } = await supabase
             .from("profiles")
-            .select("id, username, full_name, roles, is_admin, permissions")
+            .select("id, username, full_name, roles, is_admin, permissions, seller_id_erp")
             .eq("id", userId)
             .single();
+        // <<< FIM DA CORREÇÃO CRÍTICA >>>
+
         if (error) throw error;
         return profile;
     } catch (error) {
@@ -89,7 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!signInData.user)
                 throw new Error("Falha na autenticação. Tente novamente.");
 
-            // 🔑 Após login bem-sucedido, busca o perfil e inicializa o app
+            // Agora esta função buscará o perfil COMPLETO
             const userProfile = await getUserProfile(signInData.user.id);
             if (!userProfile) throw new Error("Perfil de usuário não encontrado.");
 
@@ -128,7 +132,6 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             if (event === "TOKEN_REFRESHED") {
                 console.log("Token atualizado.");
-                // Não altera UI, mas libera o lock
                 return;
             }
 
@@ -155,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
             await supabase.auth.signOut();
         } finally {
             hideLoader();
-            isHandlingAuthChange = false; // 🔑 garante destravar SEMPRE
+            isHandlingAuthChange = false;
         }
     });
 });
