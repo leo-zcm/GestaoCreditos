@@ -1,7 +1,6 @@
 // modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
 
 const CreditosModule = (() => {
-    // <<< CORREÇÃO: A variável de filtros é inicializada aqui para manter o estado >>>
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
@@ -50,7 +49,6 @@ const CreditosModule = (() => {
                             </tr>
                         </thead>
                         <tbody id="credits-list">
-                            <!-- Mensagem inicial -->
                             <tr><td colspan="10">Utilize os filtros acima para buscar os créditos.</td></tr>
                         </tbody>
                     </table>
@@ -79,13 +77,10 @@ const CreditosModule = (() => {
             document.head.appendChild(style);
         }
     
-        // <<< CORREÇÃO: As chamadas async estão todas dentro da função async 'render' >>>
         await populateSellersDropdown();
         setupEventListeners();
-        // A busca inicial não é mais automática para melhorar a performance. O usuário clica em "Buscar".
     };
 
-    // <<< CORREÇÃO: Lógica de popular vendedores refeita para garantir unicidade e corrigir o bug do ID 1 >>>
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
         sellerSelect.innerHTML = '<option value="">Carregando...</option>';
@@ -93,7 +88,6 @@ const CreditosModule = (() => {
             const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
             if (error) throw error;
 
-            // Usamos um Map para garantir que cada nome de vendedor seja único na lista
             const uniqueSellers = new Map();
             sellers.forEach(s => {
                 if (s.full_name && !uniqueSellers.has(s.full_name)) {
@@ -101,12 +95,9 @@ const CreditosModule = (() => {
                 }
             });
 
-            // Converte o Map para um array, ordena por nome e cria as opções
             const sortedSellers = Array.from(uniqueSellers.entries()).sort((a, b) => a[0].localeCompare(b[0]));
 
             let options = '<option value="">Todos Vendedores</option>';
-            options += '<option value="ZE_CLEUTO">ZE CLEUTO</option>'; // Opção especial
-
             sortedSellers.forEach(([fullName, sellerId]) => {
                 options += `<option value="${sellerId}">${fullName}</option>`;
             });
@@ -126,38 +117,25 @@ const CreditosModule = (() => {
     
         try {
             const userPermissions = App.userProfile.permissions?.creditos || {};
-            const selectStatement = `*, clients_erp(client_name)`;
+            // <<< MUDANÇA IMPORTANTE: O select agora precisa ser explícito para o filtro funcionar >>>
+            const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
             // Lógica de permissão de visualização (own vs all)
             if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
-                const { data: clientCodes, error: clientError } = await supabase
-                    .from('clients_erp').select('client_code').eq('id_vendedor', App.userProfile.seller_id_erp);
-                if (clientError) throw clientError;
-                const codes = clientCodes.map(c => c.client_code);
-                if (codes.length === 0) { renderTable([]); return; }
-                query = query.in('client_code', codes);
+                query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
                 document.getElementById('filter-seller').disabled = true;
             } else {
-                // Lógica de filtro do dropdown de vendedor
                 const sellerFilter = currentFilters.seller_id;
-                if (sellerFilter === 'ZE_CLEUTO') {
-                    const { data: clientCodes, error: clientError } = await supabase
-                        .from('clients_erp').select('client_code').neq('id_vendedor', '1');
-                    if (clientError) throw clientError;
-                    const codes = clientCodes.map(c => c.client_code);
-                    if (codes.length === 0) { renderTable([]); return; }
-                    query = query.in('client_code', codes);
-                } else if (sellerFilter) {
-                    const { data: clientCodes, error: clientError } = await supabase
-                        .from('clients_erp').select('client_code').eq('id_vendedor', sellerFilter);
-                    if (clientError) throw clientError;
-                    const codes = clientCodes.map(c => c.client_code);
-                    if (codes.length === 0) { renderTable([]); return; }
-                    query = query.in('client_code', codes);
+                // <<< CORREÇÃO: Lógica de filtro refeita para ser mais simples e robusta >>>
+                if (sellerFilter) {
+                    // Filtra diretamente na tabela relacionada. É mais eficiente e confiável.
+                    query = query.eq('clients_erp.id_vendedor', sellerFilter);
                 }
+                // Se sellerFilter for vazio ("Todos Vendedores"), nenhum filtro de vendedor é aplicado.
             }
     
+            // Aplica os outros filtros
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
             if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
             
@@ -168,6 +146,7 @@ const CreditosModule = (() => {
             let { data: credits, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
     
+            // O filtro por nome do cliente agora pode ser feito no front-end, pois os dados já foram retornados
             if (currentFilters.client_name) {
                 credits = credits.filter(c => 
                     c.clients_erp?.client_name && c.clients_erp.client_name.toLowerCase().includes(currentFilters.client_name.toLowerCase())
@@ -178,7 +157,7 @@ const CreditosModule = (() => {
     
         } catch (error) {
             console.error("Erro ao carregar créditos:", error);
-            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
+            listContainer.innerHTML = `<tr><td colspan="10" class="error-message">Falha ao carregar dados: ${error.message}</td></tr>`;
         } finally {
             App.hideLoader();
             updateSelectionSummary();
