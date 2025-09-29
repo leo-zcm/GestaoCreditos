@@ -1,11 +1,9 @@
-// modules/creditos.js (VERSÃO FINAL COMPLETA E CORRIGIDA)
+// modules/creditos.js
 
 const CreditosModule = (() => {
-    // Estado do módulo
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
     let selectedCredits = new Map();
 
-    // Função principal para renderizar a view do módulo
     const render = async (initialFilters = null) => {
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
@@ -38,13 +36,13 @@ const CreditosModule = (() => {
                     <table id="credits-table">
                         <thead>
                             <tr>
-                                <th><input type="checkbox" id="select-all-credits"></th>
+                                <th class="col-select"><input type="checkbox" id="select-all-credits"></th>
                                 <th>Data Criação</th>
                                 <th>Nº Registro</th>
                                 <th>Cód. Cliente</th>
                                 <th>Cliente</th>
                                 <th>Descrição</th>
-                                <th>Qtd</th>
+                                <th class="col-qtd">Qtd</th>
                                 <th>Valor</th>
                                 <th class="col-pedido">Ped. Abatido</th>
                                 <th class="col-actions">Ações</th>
@@ -65,13 +63,33 @@ const CreditosModule = (() => {
             const style = document.createElement('style');
             style.id = styleId;
             style.innerHTML = `
-                #credits-table { font-size: 0.9rem; table-layout: fixed; }
-                #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .col-pedido { width: 10%; }
-                .col-actions { width: 140px; text-align: right; }
+                #credits-table { 
+                    font-size: 0.9rem; 
+                    table-layout: fixed;
+                    width: 100%;
+                }
+                #credits-table td, #credits-table th { 
+                    padding: 0.6rem; 
+                    white-space: nowrap; 
+                    overflow: hidden; 
+                    text-overflow: ellipsis; 
+                    vertical-align: middle;
+                }
+                .col-select { width: 40px; text-align: center; }
+                .col-qtd { width: 60px; text-align: center; }
+                .col-pedido { width: 12%; }
+                .col-actions { width: 180px; }
+                .action-buttons { 
+                    display: flex; 
+                    justify-content: flex-end; 
+                    gap: 0.5rem; 
+                }
                 .selection-summary { 
-                    display: flex; justify-content: space-between; align-items: center; 
-                    padding: 1rem; background-color: var(--light-color); 
+                    display: flex; 
+                    justify-content: space-between; 
+                    align-items: center; 
+                    padding: 1rem; 
+                    background-color: var(--light-color); 
                     border-top: 1px solid var(--border-color);
                     margin: 1rem -1.5rem -1.5rem -1.5rem;
                     border-radius: 0 0 8px 8px;
@@ -134,10 +152,7 @@ const CreditosModule = (() => {
                     .from('clients_erp').select('client_code').eq('id_vendedor', sellerErpIdToFilter);
                 if (clientError) throw clientError;
                 const codes = clientCodes.map(c => c.client_code);
-                if (codes.length === 0) {
-                    renderTable([]);
-                    return;
-                }
+                if (codes.length === 0) { renderTable([]); return; }
                 query = query.in('client_code', codes);
             }
 
@@ -171,19 +186,21 @@ const CreditosModule = (() => {
             const isSelected = selectedCredits.has(credit.id);
             return `
                 <tr class="${isSelected ? 'selected' : ''}">
-                    <td><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
+                    <td class="col-select"><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
                     <td>${new Date(credit.created_at).toLocaleDateString()}</td>
                     <td>${credit.n_registro || '---'}</td>
                     <td>${credit.client_code}</td>
                     <td title="${credit.clients_erp?.client_name || ''}">${credit.clients_erp?.client_name || 'N/A'}</td>
                     <td title="${credit.description}">${credit.description}</td>
-                    <td>${credit.quantity || '---'}</td>
+                    <td class="col-qtd">${credit.quantity || '---'}</td>
                     <td>${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td class="col-pedido">${credit.abatement_order || '---'}</td>
                     <td class="col-actions">
                         ${credit.status === 'Disponível' ? `
-                            <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>
-                            <button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>
+                            <div class="action-buttons">
+                                <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>
+                                <button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>
+                            </div>
                         ` : ''}
                     </td>
                 </tr>
@@ -241,9 +258,7 @@ const CreditosModule = (() => {
 
         const clientCodeInput = document.getElementById('clientCode');
         const productCodeInput = document.getElementById('productCode');
-        const descriptionInput = document.getElementById('description');
-        const quantityInput = document.getElementById('quantity');
-
+        
         const fetchClientData = async () => {
             const code = clientCodeInput.value;
             if (!code) return;
@@ -263,7 +278,9 @@ const CreditosModule = (() => {
         };
 
         const fetchProductData = async () => {
-            const code = productCodeInput.value;
+            const code = document.getElementById('productCode').value;
+            const descriptionInput = document.getElementById('description');
+            const quantityInput = document.getElementById('quantity');
             if (!code) {
                 descriptionInput.readOnly = false;
                 quantityInput.required = false;
@@ -271,8 +288,7 @@ const CreditosModule = (() => {
             }
             try {
                 const { data: product, error } = await supabase.from('products_erp').select('product_name').eq('product_code', code).single();
-                if (error && error.code !== 'PGRST116') throw error;
-
+                if (error && error.code !== 'PGRST116') { throw error; }
                 if (product) {
                     descriptionInput.value = product.product_name;
                     descriptionInput.readOnly = true;
@@ -290,12 +306,10 @@ const CreditosModule = (() => {
 
         clientCodeInput.addEventListener('blur', fetchClientData);
         productCodeInput.addEventListener('blur', fetchProductData);
-
         if (credit) {
             await fetchClientData();
             await fetchProductData();
         }
-
         document.getElementById('credit-form').addEventListener('submit', handleFormSubmit);
         document.getElementById('modal-container').classList.add('active');
     };
@@ -381,10 +395,7 @@ const CreditosModule = (() => {
                 throw new Error('Dados inválidos. Verifique o pedido e o valor.');
             }
             const { data: creditsToAbate, error: fetchError } = await supabase
-                .from('credits')
-                .select('*')
-                .in('id', creditIds)
-                .order('created_at', { ascending: true });
+                .from('credits').select('*').in('id', creditIds).order('created_at', { ascending: true });
             if (fetchError) throw fetchError;
             let remainingAbateValue = abateValue;
             for (const credit of creditsToAbate) {
@@ -401,8 +412,7 @@ const CreditosModule = (() => {
                     remainingAbateValue -= credit.value;
                 } else {
                     const { error: updateError } = await supabase.from('credits')
-                        .update({ ...abatementData, value: remainingAbateValue })
-                        .eq('id', credit.id);
+                        .update({ ...abatementData, value: remainingAbateValue }).eq('id', credit.id);
                     if (updateError) throw updateError;
                     const newCreditData = { ...credit };
                     delete newCreditData.id;
