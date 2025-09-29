@@ -42,6 +42,8 @@ const App = {
         this.buildNavigation();
     },
 
+
+
     buildNavigation() {
         const nav = document.getElementById('main-nav');
         let navHtml = '<ul>';
@@ -129,6 +131,7 @@ const App = {
         this.hideLoader();
     },
 
+    // <<< CORREÇÃO AQUI: Removido o `style="cursor: default;"` do card de créditos >>>
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
@@ -228,7 +231,6 @@ const App = {
             </div>`;
     },
 
-    // <<< CORREÇÃO AQUI: Garantia de que o listener do card de crédito é sempre ativado >>>
     setupHomeEventListeners() {
         const contentArea = document.getElementById('content-area');
         
