@@ -1,4 +1,4 @@
-// app.js (VERSÃO 100% COMPLETA E CORRIGIDA)
+// app.js (VERSÃO COM INTEGRAÇÃO COMPLETA DOS WIDGETS DA HOME)
 
 const App = {
     userProfile: null,
@@ -129,6 +129,7 @@ const App = {
         this.hideLoader();
     },
 
+    // <<< ALTERAÇÃO AQUI: Adicionado ID e cursor:pointer ao card de créditos >>>
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
@@ -150,7 +151,7 @@ const App = {
                         <button id="home-search-credit-btn" class="btn btn-secondary">Buscar</button>
                         <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
-                    <div class="card stat-card is-info" style="cursor: default;">
+                    <div id="widget-vendedor-creditos-card" class="card stat-card is-info">
                         <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
                         <div class="stat-label">Clientes com Crédito</div>
                     </div>
@@ -228,6 +229,7 @@ const App = {
             </div>`;
     },
 
+    // <<< ALTERAÇÃO AQUI: Adicionado listener para o card de estatísticas de crédito >>>
     setupHomeEventListeners() {
         const contentArea = document.getElementById('content-area');
         
@@ -265,19 +267,24 @@ const App = {
         }
 
         const searchCreditBtn = contentArea.querySelector('#home-search-credit-btn');
-        const searchCreditInput = contentArea.querySelector('#home-search-credit-input');
-        if (searchCreditBtn && searchCreditInput) {
-            const performSearch = () => {
-                const clientCode = searchCreditInput.value;
+        if (searchCreditBtn) {
+            searchCreditBtn.addEventListener('click', () => {
+                const clientCode = document.getElementById('home-search-credit-input').value;
                 if (clientCode) {
                     this.navigateToModule('creditos', { client_code: clientCode, status: 'Disponível' });
                 }
-            };
-            searchCreditBtn.addEventListener('click', performSearch);
-            searchCreditInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    performSearch();
+            });
+        }
+
+        // NOVO: Listener para o card de estatísticas de crédito do vendedor
+        const creditStatCard = contentArea.querySelector('#widget-vendedor-creditos-card');
+        if (creditStatCard) {
+            creditStatCard.addEventListener('click', () => {
+                if (this.userProfile.seller_id_erp) {
+                    this.navigateToModule('creditos', {
+                        seller_id: this.userProfile.seller_id_erp,
+                        status: 'Disponível'
+                    });
                 }
             });
         }
@@ -488,6 +495,7 @@ const App = {
         this.dashboardChannel = supabase
             .channel('dashboard-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'proofs' }, handleDbChange)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'credits' }, handleDbChange) // Monitora créditos também
             .subscribe((status, err) => {
                 if (status === 'SUBSCRIBED') {
                     console.log('Conectado ao canal de realtime do dashboard!');
