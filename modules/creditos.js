@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM PERMISSÕES DE VENDEDOR CORRIGIDAS E TRAVADAS)
+// modules/creditos.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -71,23 +71,18 @@ const CreditosModule = (() => {
             document.head.appendChild(style);
         }
 
-        // <<< CORREÇÃO AQUI: Lógica de permissão e filtros movida para o início da renderização >>>
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
 
-        // 1. Define o estado dos filtros com base nas permissões e filtros iniciais
         if (initialFilters) {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
         if (isOwnView) {
-            // A permissão 'own' sempre sobrescreve qualquer outro filtro de vendedor
             currentFilters.seller_id = App.userProfile.seller_id_erp;
         }
 
-        // 2. Popula o dropdown de vendedores
         await populateSellersDropdown();
 
-        // 3. Agora que o dropdown existe, aplica o estado (valor e trava)
         const sellerDropdown = document.getElementById('filter-seller');
         sellerDropdown.value = currentFilters.seller_id || '';
         if (isOwnView) {
@@ -95,7 +90,7 @@ const CreditosModule = (() => {
         }
         
         setupEventListeners();
-        await loadCredits(); // Carrega os dados usando os filtros já definidos
+        await loadCredits();
     };
 
     const populateSellersDropdown = async () => {
@@ -127,11 +122,14 @@ const CreditosModule = (() => {
         }
     };
 
-    // <<< CORREÇÃO AQUI: A função agora apenas lê o estado `currentFilters` e busca os dados >>>
     const loadCredits = async () => {
         App.showLoader();
         
-        // Atualiza a UI dos filtros para garantir consistência
+        const userPermissions = App.userProfile.permissions?.creditos || {};
+        if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
+            currentFilters.seller_id = App.userProfile.seller_id_erp;
+        }
+
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
@@ -177,6 +175,8 @@ const CreditosModule = (() => {
 
     const renderTable = (credits) => {
         const listContainer = document.getElementById('credits-list');
+        const creditPerms = App.userProfile.permissions?.creditos || {};
+
         if (credits.length === 0) {
             listContainer.innerHTML = '<tr><td colspan="10">Nenhum resultado encontrado.</td></tr>';
             return;
@@ -197,8 +197,8 @@ const CreditosModule = (() => {
                     <td class="col-actions">
                         ${credit.status === 'Disponível' ? `
                             <div class="action-buttons">
-                                <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>
-                                <button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>
+                                ${creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
+                                ${creditPerms.abater ? `<button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>` : ''}
                             </div>
                         ` : ''}
                     </td>
@@ -438,18 +438,21 @@ const CreditosModule = (() => {
     const updateSelectionSummary = () => {
         const summaryContainer = document.getElementById('selection-summary');
         if (!summaryContainer) return;
+
+        const creditPerms = App.userProfile.permissions?.creditos || {};
         const count = selectedCredits.size;
         const multiAbateBtn = document.getElementById('btn-multi-abate');
+        
         if (count === 0) {
             summaryContainer.querySelector('span').textContent = 'Nenhum crédito selecionado.';
-            multiAbateBtn.disabled = true;
         } else {
             let total = 0;
             selectedCredits.forEach(credit => total += credit.value);
             summaryContainer.querySelector('span').textContent = 
                 `${count} crédito(s) selecionado(s) | Total: ${total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
-            multiAbateBtn.disabled = false;
         }
+        
+        multiAbateBtn.disabled = !creditPerms.abater || count === 0;
     };
 
     const setupEventListeners = () => {
