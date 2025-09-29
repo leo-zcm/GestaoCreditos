@@ -77,7 +77,7 @@ const CreditosModule = (() => {
                 }
                 .col-select { width: 40px; text-align: center; }
                 .col-qtd { width: 60px; text-align: center; }
-                .col-pedido { width: 12%; }
+                .col-pedido { width: 120px; }
                 .col-actions { width: 180px; }
                 .action-buttons { 
                     display: flex; 
