@@ -144,13 +144,16 @@ const App = {
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
-                            <label for="vendedor-client-code">Código do Cliente</label>
-                            <input type="text" id="vendedor-client-code" placeholder="Digite o código">
+                            <label for="home-search-credit-input">Código do Cliente</label>
+                            <input type="text" id="home-search-credit-input" placeholder="Digite o código">
                         </div>
-                        <button class="btn btn-secondary" disabled>Buscar</button>
+                        <button id="home-search-credit-btn" class="btn btn-secondary">Buscar</button>
                         <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
-                    <div class="card stat-card is-info" style="cursor: default;"><div id="widget-vendedor-creditos" class="stat-number">--</div><div class="stat-label">Clientes com Crédito</div></div>
+                    <div class="card stat-card is-info" style="cursor: default;">
+                        <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
+                        <div class="stat-label">Clientes com Crédito</div>
+                    </div>
                     <div class="card stat-card is-warning" style="cursor: default;"><div id="widget-vendedor-solicitacoes" class="stat-number">--</div><div class="stat-label">Solicitações Pendentes</div></div>
                     <div class="card avisos-card"><h3>Avisos</h3>${avisosHtml}</div>
                 </div>
@@ -259,6 +262,24 @@ const App = {
         const manageWidgetsBtn = contentArea.querySelector('#btn-manage-widgets');
         if (manageWidgetsBtn) {
             manageWidgetsBtn.addEventListener('click', () => this.renderManagementModal());
+        }
+
+        const searchCreditBtn = contentArea.querySelector('#home-search-credit-btn');
+        const searchCreditInput = contentArea.querySelector('#home-search-credit-input');
+        if (searchCreditBtn && searchCreditInput) {
+            const performSearch = () => {
+                const clientCode = searchCreditInput.value;
+                if (clientCode) {
+                    this.navigateToModule('creditos', { client_code: clientCode, status: 'Disponível' });
+                }
+            };
+            searchCreditBtn.addEventListener('click', performSearch);
+            searchCreditInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    performSearch();
+                }
+            });
         }
     },
 
@@ -430,15 +451,29 @@ const App = {
         const { data, error } = await supabase.rpc('get_dashboard_stats');
         if (error) {
             console.error("Erro ao buscar estatísticas do dashboard:", error);
-            return;
-        }
-        if (data) {
+        } else if (data) {
             const pendingEl = document.getElementById('widget-pending-count');
             if (pendingEl) pendingEl.textContent = data.pending_proofs;
             const confirmedEl = document.getElementById('widget-confirmed-count');
             if (confirmedEl) confirmedEl.textContent = data.confirmed_proofs;
             const faturadoEl = document.getElementById('widget-faturado-count');
             if (faturadoEl) faturadoEl.textContent = data.faturado_proofs;
+        }
+
+        if (this.userProfile.roles.includes('VENDEDOR') && this.userProfile.seller_id_erp) {
+            const creditCountEl = document.getElementById('widget-vendedor-creditos-count');
+            if (creditCountEl) {
+                const { data: creditData, error: creditError } = await supabase.rpc('get_vendedor_credit_stats', {
+                    p_seller_id: this.userProfile.seller_id_erp
+                });
+
+                if (creditError) {
+                    console.error("Erro ao buscar estatísticas de crédito:", creditError);
+                    creditCountEl.textContent = 'Erro';
+                } else {
+                    creditCountEl.textContent = creditData;
+                }
+            }
         }
     },
 
