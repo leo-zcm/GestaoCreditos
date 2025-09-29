@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM INTEGRAÇÃO DA HOME E PERMISSÕES VERIFICADAS)
+// modules/creditos.js (VERSÃO COM FEEDBACK VISUAL DE FILTROS DA HOME)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -105,6 +105,7 @@ const CreditosModule = (() => {
         }
     };
 
+    // <<< ALTERAÇÃO AQUI: Lógica aprimorada para atualizar a UI com os filtros iniciais >>>
     const loadCredits = async (initialFilters = null) => {
         App.showLoader();
         
@@ -112,9 +113,11 @@ const CreditosModule = (() => {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
 
+        // ATUALIZA A UI: Garante que os campos de filtro reflitam o estado atual
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
+        document.getElementById('filter-seller').value = currentFilters.seller_id || '';
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
@@ -126,7 +129,9 @@ const CreditosModule = (() => {
     
             if (userPermissions.view === 'own' && App.userProfile.seller_id_erp) {
                 query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
-                document.getElementById('filter-seller').disabled = true;
+                const sellerDropdown = document.getElementById('filter-seller');
+                sellerDropdown.value = App.userProfile.seller_id_erp;
+                sellerDropdown.disabled = true;
             } else {
                 const sellerFilter = currentFilters.seller_id;
                 if (sellerFilter) {
