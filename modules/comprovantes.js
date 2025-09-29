@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO CORRIGIDA COM FUNÇÃO EXPOSTA)
+// modules/comprovantes.js (VERSÃO COM GERAÇÃO DE CRÉDITO INTEGRADA)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -14,7 +14,6 @@ const ComprovantesModule = (() => {
     let documentPasteHandler = null;
 
     const loadProofs = async (initialFilters = null) => {
-        // <<< ALTERAÇÃO AQUI: Lógica para aceitar filtros iniciais do dashboard >>>
         if (initialFilters && initialFilters.status) {
             currentFilters.status = initialFilters.status;
             document.getElementById('filter-status').value = initialFilters.status;
@@ -219,7 +218,79 @@ const ComprovantesModule = (() => {
         } else if (action === 'baixar') {
             if (confirm('Deseja baixar este pagamento?')) await updateProofStatus(id, 'BAIXADO');
         } else if (action === 'credit') {
-            alert('Funcionalidade "Gerar Crédito" será implementada no próximo módulo.');
+            renderGenerateCreditModal(id);
+        }
+    };
+
+    const renderGenerateCreditModal = async (proofId) => {
+        App.showLoader();
+        try {
+            const { data: proof, error } = await supabase.from('proofs').select('client_code, value').eq('id', proofId).single();
+            if (error) throw error;
+
+            const modalBody = document.getElementById('modal-body');
+            modalBody.innerHTML = `
+                <h2>Gerar Crédito</h2>
+                <form id="credit-gen-form">
+                    <p>Será gerado um crédito no valor de <strong>${proof.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>.</p>
+                    <div class="form-group">
+                        <label for="creditClientCode">Código do Cliente</label>
+                        <input type="text" id="creditClientCode" value="${proof.client_code || ''}" ${proof.client_code ? 'disabled' : 'required'}>
+                    </div>
+                    <div class="form-group">
+                        <label for="creditDescription">Descrição do Crédito</label>
+                        <input type="text" id="creditDescription" placeholder="Ex: Devolução item X, Pagamento duplicado" required>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <button type="submit" class="btn btn-primary">Confirmar Geração de Crédito</button>
+                </form>
+            `;
+            document.getElementById('modal-container').classList.add('active');
+            document.getElementById('credit-gen-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleGenerateCreditSubmit(proofId, proof.value);
+            });
+        } catch (err) {
+            console.error("Erro ao preparar geração de crédito:", err);
+            alert("Não foi possível carregar os dados do comprovante.");
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleGenerateCreditSubmit = async (proofId, proofValue) => {
+        App.showLoader();
+        const errorP = document.getElementById('modal-error');
+        errorP.textContent = '';
+        try {
+            const clientCode = document.getElementById('creditClientCode').value.toUpperCase();
+            const description = document.getElementById('creditDescription').value;
+
+            if (!clientCode || !description) {
+                throw new Error("Código do cliente e descrição são obrigatórios.");
+            }
+
+            const { error: creditError } = await supabase.from('credits').insert({
+                client_code: clientCode,
+                description: description,
+                value: proofValue,
+                status: 'Disponível',
+                created_by: App.userProfile.id,
+                original_proof_id: proofId
+            });
+            if (creditError) throw creditError;
+
+            const { error: proofError } = await supabase.from('proofs').update({ status: 'CRÉDITO', updated_at: new Date() }).eq('id', proofId);
+            if (proofError) throw proofError;
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadProofs();
+
+        } catch (error) {
+            console.error("Erro ao gerar crédito:", error);
+            errorP.textContent = `Falha: ${error.message}`;
+        } finally {
+            App.hideLoader();
         }
     };
 
@@ -310,7 +381,6 @@ const ComprovantesModule = (() => {
             }
             cleanupModalListeners();
             document.getElementById('modal-container').classList.remove('active');
-            // Se o usuário estiver na home, não recarrega a tabela, pois ela não existe lá.
             if (document.getElementById('proofs-list')) {
                 await loadProofs();
             }
@@ -444,6 +514,6 @@ const ComprovantesModule = (() => {
         name: 'Comprovantes',
         render,
         cleanupModalListeners,
-        renderProofModal // <<< CORREÇÃO AQUI: Expondo a função para ser pública
+        renderProofModal
     };
 })();
