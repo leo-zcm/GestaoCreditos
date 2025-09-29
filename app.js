@@ -1,4 +1,4 @@
-// app.js (VERSÃO COM INTEGRAÇÃO COMPLETA E CORRIGIDA DOS WIDGETS DA HOME)
+// app.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
 
 const App = {
     userProfile: null,
@@ -41,8 +41,6 @@ const App = {
         document.getElementById('user-display-name').textContent = this.userProfile.full_name || this.userProfile.username;
         this.buildNavigation();
     },
-
-
 
     buildNavigation() {
         const nav = document.getElementById('main-nav');
@@ -131,7 +129,6 @@ const App = {
         this.hideLoader();
     },
 
-    // <<< CORREÇÃO AQUI: Removido o `style="cursor: default;"` do card de créditos >>>
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
@@ -475,7 +472,7 @@ const App = {
                 });
 
                 if (creditError) {
-                    console.error("Erro ao buscar estatísticas de crédito:", creditError);
+                    console.error("Erro RPC get_vendedor_credit_stats:", creditError);
                     creditCountEl.textContent = 'Erro';
                 } else {
                     creditCountEl.textContent = creditData;
@@ -488,7 +485,7 @@ const App = {
         if (this.dashboardChannel) return;
         
         const handleDbChange = (payload) => {
-            console.log('Mudança no banco de dados detectada:', payload);
+            console.log('Mudança no banco de dados detectada:', payload.table);
             this.updateDashboardStats();
         };
 
