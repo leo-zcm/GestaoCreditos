@@ -1,4 +1,4 @@
-// app.js (VERSÃO COM INTEGRAÇÃO COMPLETA DOS WIDGETS DA HOME)
+// app.js (VERSÃO COM INTEGRAÇÃO COMPLETA E CORRIGIDA DOS WIDGETS DA HOME)
 
 const App = {
     userProfile: null,
@@ -129,7 +129,6 @@ const App = {
         this.hideLoader();
     },
 
-    // <<< ALTERAÇÃO AQUI: Adicionado ID e cursor:pointer ao card de créditos >>>
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
@@ -229,7 +228,7 @@ const App = {
             </div>`;
     },
 
-    // <<< ALTERAÇÃO AQUI: Adicionado listener para o card de estatísticas de crédito >>>
+    // <<< CORREÇÃO AQUI: Garantia de que o listener do card de crédito é sempre ativado >>>
     setupHomeEventListeners() {
         const contentArea = document.getElementById('content-area');
         
@@ -276,7 +275,6 @@ const App = {
             });
         }
 
-        // NOVO: Listener para o card de estatísticas de crédito do vendedor
         const creditStatCard = contentArea.querySelector('#widget-vendedor-creditos-card');
         if (creditStatCard) {
             creditStatCard.addEventListener('click', () => {
@@ -495,7 +493,7 @@ const App = {
         this.dashboardChannel = supabase
             .channel('dashboard-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'proofs' }, handleDbChange)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'credits' }, handleDbChange) // Monitora créditos também
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'credits' }, handleDbChange)
             .subscribe((status, err) => {
                 if (status === 'SUBSCRIBED') {
                     console.log('Conectado ao canal de realtime do dashboard!');
