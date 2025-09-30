@@ -137,7 +137,6 @@ const App = {
                 <div class="dashboard-grid">
                     <div class="card quick-action-card">
                         <h3>Ações Rápidas</h3>
-                        // <<< CORREÇÃO: Usando classe em vez de ID para evitar conflitos >>>
                         <button class="btn btn-primary home-add-proof">Adicionar Comprovante</button>
                         <button class="btn btn-secondary" disabled>Nova Solicitação D/C</button>
                         <button id="home-show-links" class="btn btn-info">Links Úteis</button>
@@ -146,10 +145,8 @@ const App = {
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
                             <label for="home-search-credit-input-vendedor">Código do Cliente</label>
-                            // <<< CORREÇÃO: Usando classe para padronizar >>>
                             <input type="text" class="home-search-credit-input" id="home-search-credit-input-vendedor" placeholder="Digite o código">
                         </div>
-                        // <<< CORREÇÃO: Usando classe para padronizar >>>
                         <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
                         <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
@@ -169,7 +166,6 @@ const App = {
                 <h3>Painel do Caixa</h3>
                 <div class="dashboard-grid">
                     <div class="card quick-action-card">
-                         // <<< CORREÇÃO: Usando classe em vez de ID para evitar conflitos >>>
                          <button class="btn btn-primary home-add-proof">Inserir Novo Pagamento</button>
                     </div>
                     <div id="widget-faturado" class="card stat-card is-success" data-status-filter="FATURADO">
@@ -200,16 +196,13 @@ const App = {
             <div class="dashboard-section">
                 <h3>Painel do Faturista</h3>
                 <div class="dashboard-grid">
-                     // <<< CORREÇÃO: Adicionada classe 'home-add-credit' e removido 'disabled' >>>
                      <div class="card quick-action-card"><button class="btn btn-primary home-add-credit">Inserir Novo Crédito</button></div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
                             <label for="faturista-client-code">Código do Cliente</label>
-                            // <<< CORREÇÃO: Usando classe para padronizar >>>
                             <input type="text" class="home-search-credit-input" id="faturista-client-code" placeholder="Digite o código">
                         </div>
-                        // <<< CORREÇÃO: Adicionada classe 'home-search-credit-btn' e removido 'disabled' >>>
                         <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
                     </div>
                     <div id="widget-confirmed" class="card stat-card is-info" data-status-filter="CONFIRMADO"><div id="widget-confirmed-count" class="stat-number">...</div><div class="stat-label">Pagamentos Confirmados para Faturar</div></div>
@@ -222,16 +215,13 @@ const App = {
             <div class="dashboard-section">
                 <h3>Painel da Garantia</h3>
                 <div class="dashboard-grid">
-                    // <<< CORREÇÃO: Adicionada classe 'home-add-credit' e removido 'disabled' >>>
                     <div class="card quick-action-card"><button class="btn btn-primary home-add-credit">Inserir Novo Crédito</button></div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
                             <label for="garantia-client-code">Código do Cliente</label>
-                            // <<< CORREÇÃO: Usando classe para padronizar >>>
                             <input type="text" class="home-search-credit-input" id="garantia-client-code" placeholder="Digite o código">
                         </div>
-                        // <<< CORREÇÃO: Adicionada classe 'home-search-credit-btn' e removido 'disabled' >>>
                         <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
                     </div>
                 </div>
