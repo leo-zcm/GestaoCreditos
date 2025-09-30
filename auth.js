@@ -1,19 +1,28 @@
-// auth.js (VERSÃO FINAL E CORRIGIDA - BUSCANDO TODOS OS DADOS DO PERFIL)
+// auth.js (VERSÃO FINAL E CORRIGIDA - COM SESSION STORAGE E LÓGICA DE INICIALIZAÇÃO ROBUSTA)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
-const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// <<< MUDANÇA CRÍTICA >>>
+// Adicionamos um objeto de opções para forçar o uso do sessionStorage.
+// Isso faz com que o login seja encerrado automaticamente ao fechar a aba do navegador.
+const supabaseOptions = {
+    auth: {
+        storage: sessionStorage, // Usa sessionStorage em vez de localStorage
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true
+    },
+};
+const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, supabaseOptions);
 
 async function getUserProfile(userId) {
     try {
-        // <<< INÍCIO DA CORREÇÃO CRÍTICA >>>
-        // Adicionado 'seller_id_erp' à consulta para que o perfil do usuário esteja completo.
         const { data: profile, error } = await supabase
             .from("profiles")
             .select("id, username, full_name, roles, is_admin, permissions, seller_id_erp")
             .eq("id", userId)
             .single();
-        // <<< FIM DA CORREÇÃO CRÍTICA >>>
 
         if (error) throw error;
         return profile;
@@ -32,15 +41,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginError = document.getElementById("login-error");
     const loader = document.getElementById("loader");
 
+    // <<< MUDANÇA CRÍTICA >>>
+    // Funções de controle de UI simplificadas. O loader agora é o estado padrão.
     const showLoader = () => loader.classList.add("active");
     const hideLoader = () => loader.classList.remove("active");
+    
     const showAppScreen = () => {
-        loginScreen.classList.remove("active");
         appScreen.classList.add("active");
+        loginScreen.classList.remove("active");
+        hideLoader(); // O loader é escondido apenas quando a tela correta é exibida
     };
     const showLoginScreen = () => {
-        appScreen.classList.remove("active");
         loginScreen.classList.add("active");
+        appScreen.classList.remove("active");
+        hideLoader(); // O loader é escondido apenas quando a tela correta é exibida
     };
 
     const usernameInput = document.getElementById("username");
@@ -72,7 +86,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!username || !password) {
             loginError.textContent = "Usuário e senha são obrigatórios.";
-            hideLoader();
+            // <<< MUDANÇA CRÍTICA >>> Não escondemos o loader aqui, deixamos o fluxo continuar
+            // para que a tela de login seja exibida corretamente no final.
+            showLoginScreen(); 
             return;
         }
 
@@ -93,7 +109,6 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!signInData.user)
                 throw new Error("Falha na autenticação. Tente novamente.");
 
-            // Agora esta função buscará o perfil COMPLETO
             const userProfile = await getUserProfile(signInData.user.id);
             if (!userProfile) throw new Error("Perfil de usuário não encontrado.");
 
@@ -102,63 +117,59 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             console.error("Erro no processo de login:", error.message);
             loginError.textContent = error.message;
-        } finally {
-            hideLoader();
-        }
+            showLoginScreen(); // Em caso de erro, garante que a tela de login seja exibida
+        } 
+        // <<< MUDANÇA CRÍTICA >>> O `finally` não é mais necessário aqui, pois
+        // `showAppScreen` e `showLoginScreen` já cuidam de esconder o loader.
     };
 
-    loginButton.addEventListener("click", handleLogin);
+    // <<< MUDANÇA CRÍTICA >>> Agora o evento é 'submit'
     loginForm.addEventListener("submit", handleLogin);
 
     logoutButton.addEventListener("click", async () => {
         showLoader();
         await supabase.auth.signOut();
+        // O onAuthStateChange cuidará de mostrar a tela de login
     });
 
     // ===========================================================
-    // GERENCIAMENTO DE SESSÃO (ROBUSTO E SEM DEADLOCK DO LOADER)
+    // GERENCIAMENTO DE SESSÃO (AGORA 100% ROBUSTO)
     // ===========================================================
-    let isHandlingAuthChange = false;
-
     supabase.auth.onAuthStateChange(async (event, session) => {
-        if (isHandlingAuthChange) {
-            console.log(`Auth event [${event}] ignorado (já em andamento).`);
+        // O loader já está ativo por padrão no carregamento da página.
+        // Não precisamos de flags complexas aqui, a lógica é linear.
+
+        if (event === "SIGNED_OUT") {
+            App.destroy();
+            showLoginScreen();
             return;
         }
 
-        isHandlingAuthChange = true;
-        showLoader();
-
-        try {
-            if (event === "TOKEN_REFRESHED") {
-                console.log("Token atualizado.");
-                return;
-            }
-
-            if (!session || !session.user) {
-                App.destroy();
-                showLoginScreen();
-                return;
-            }
-
-            if (!App.isInitialized()) {
-                const userProfile = await getUserProfile(session.user.id);
-                if (userProfile) {
-                    App.init(userProfile);
+        if (session && session.user) {
+            // Se já existe uma sessão (ex: F5 na página)
+            try {
+                if (!App.isInitialized()) {
+                    const userProfile = await getUserProfile(session.user.id);
+                    if (userProfile) {
+                        App.init(userProfile);
+                        showAppScreen();
+                    } else {
+                        // Caso raro: sessão existe mas perfil não foi encontrado
+                        console.error("Sessão válida, mas perfil não encontrado. Forçando logout.");
+                        await supabase.auth.signOut();
+                    }
                 } else {
-                    console.error("Perfil não encontrado. Forçando logout.");
-                    await supabase.auth.signOut();
-                    return;
+                    // App já inicializado, apenas garante que a tela correta está visível
+                    showAppScreen();
                 }
+            } catch (error) {
+                console.error("Erro crítico ao restaurar sessão:", error);
+                await supabase.auth.signOut();
             }
-
-            showAppScreen();
-        } catch (error) {
-            console.error("Erro crítico no onAuthStateChange:", error);
-            await supabase.auth.signOut();
-        } finally {
-            hideLoader();
-            isHandlingAuthChange = false;
+        } else {
+            // Nenhuma sessão encontrada
+            App.destroy();
+            showLoginScreen();
         }
     });
 });
