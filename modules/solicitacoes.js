@@ -519,6 +519,7 @@ const SolicitacoesModule = (() => {
 
     return {
         name: 'Solicitações D/C',
-        render
+        render,
+        renderRequestModal
     };
 })();
