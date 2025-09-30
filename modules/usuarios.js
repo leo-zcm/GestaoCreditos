@@ -26,8 +26,9 @@ const UsuariosModule = (() => {
         solicitacoes: {
             label: 'Solicitações D/C',
             perms: {
-                view: { label: 'Ver Solicitações', type: 'select', options: { all: 'Todos Vendedores', own: 'Apenas Próprias' } },
-                create: 'Inserir Solicitação', edit: 'Editar (enquanto pendente)', approve: 'Aprovar/Rejeitar'
+                view: { label: 'Ver Solicitações', type: 'select', options: { all: 'Todos Vendedores', own: 'Apenas Próprias', none: 'Não Ver' } },
+                create: 'Inserir Solicitação',
+                approve: 'Aprovar/Rejeitar'
             }
         }
     };
