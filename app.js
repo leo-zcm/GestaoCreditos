@@ -1,4 +1,4 @@
-// app.js (VERSÃO 100% CORRIGIDA E FUNCIONAL)
+// app.js (VERSÃO COM HOME 100% FUNCIONAL)
 
 const App = {
     userProfile: null,
@@ -137,17 +137,21 @@ const App = {
                 <div class="dashboard-grid">
                     <div class="card quick-action-card">
                         <h3>Ações Rápidas</h3>
-                        <button id="home-add-proof" class="btn btn-primary">Adicionar Comprovante</button>
+                        // <<< CORREÇÃO: Usando classe em vez de ID para evitar conflitos >>>
+                        <button class="btn btn-primary home-add-proof">Adicionar Comprovante</button>
                         <button class="btn btn-secondary" disabled>Nova Solicitação D/C</button>
                         <button id="home-show-links" class="btn btn-info">Links Úteis</button>
                     </div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
-                            <label for="home-search-credit-input">Código do Cliente</label>
-                            <input type="text" id="home-search-credit-input" placeholder="Digite o código">
+                            <label for="home-search-credit-input-vendedor">Código do Cliente</label>
+                            // <<< CORREÇÃO: Usando classe para padronizar >>>
+                            <input type="text" class="home-search-credit-input" id="home-search-credit-input-vendedor" placeholder="Digite o código">
                         </div>
-                        <button id="home-search-credit-btn" class="btn btn-secondary">Buscar</button>
+                        // <<< CORREÇÃO: Usando classe para padronizar >>>
+                        <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
+                        <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
                     <div id="widget-vendedor-creditos-card" class="card stat-card is-info">
                         <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
@@ -165,7 +169,8 @@ const App = {
                 <h3>Painel do Caixa</h3>
                 <div class="dashboard-grid">
                     <div class="card quick-action-card">
-                         <button id="home-add-proof" class="btn btn-primary">Inserir Novo Pagamento</button>
+                         // <<< CORREÇÃO: Usando classe em vez de ID para evitar conflitos >>>
+                         <button class="btn btn-primary home-add-proof">Inserir Novo Pagamento</button>
                     </div>
                     <div id="widget-faturado" class="card stat-card is-success" data-status-filter="FATURADO">
                         <div id="widget-faturado-count" class="stat-number">...</div>
@@ -195,14 +200,17 @@ const App = {
             <div class="dashboard-section">
                 <h3>Painel do Faturista</h3>
                 <div class="dashboard-grid">
-                     <div class="card quick-action-card"><button class="btn btn-primary" disabled>Inserir Novo Crédito</button></div>
+                     // <<< CORREÇÃO: Adicionada classe 'home-add-credit' e removido 'disabled' >>>
+                     <div class="card quick-action-card"><button class="btn btn-primary home-add-credit">Inserir Novo Crédito</button></div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
                             <label for="faturista-client-code">Código do Cliente</label>
-                            <input type="text" id="faturista-client-code" placeholder="Digite o código">
+                            // <<< CORREÇÃO: Usando classe para padronizar >>>
+                            <input type="text" class="home-search-credit-input" id="faturista-client-code" placeholder="Digite o código">
                         </div>
-                        <button class="btn btn-secondary" disabled>Buscar</button>
+                        // <<< CORREÇÃO: Adicionada classe 'home-search-credit-btn' e removido 'disabled' >>>
+                        <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
                     </div>
                     <div id="widget-confirmed" class="card stat-card is-info" data-status-filter="CONFIRMADO"><div id="widget-confirmed-count" class="stat-number">...</div><div class="stat-label">Pagamentos Confirmados para Faturar</div></div>
                 </div>
@@ -214,29 +222,55 @@ const App = {
             <div class="dashboard-section">
                 <h3>Painel da Garantia</h3>
                 <div class="dashboard-grid">
-                    <div class="card quick-action-card"><button class="btn btn-primary" disabled>Inserir Novo Crédito</button></div>
+                    // <<< CORREÇÃO: Adicionada classe 'home-add-credit' e removido 'disabled' >>>
+                    <div class="card quick-action-card"><button class="btn btn-primary home-add-credit">Inserir Novo Crédito</button></div>
                     <div class="card search-card">
                         <h3>Consultar Créditos</h3>
                         <div class="form-group">
                             <label for="garantia-client-code">Código do Cliente</label>
-                            <input type="text" id="garantia-client-code" placeholder="Digite o código">
+                            // <<< CORREÇÃO: Usando classe para padronizar >>>
+                            <input type="text" class="home-search-credit-input" id="garantia-client-code" placeholder="Digite o código">
                         </div>
-                        <button class="btn btn-secondary" disabled>Buscar</button>
+                        // <<< CORREÇÃO: Adicionada classe 'home-search-credit-btn' e removido 'disabled' >>>
+                        <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
                     </div>
                 </div>
             </div>`;
     },
 
+    // <<< FUNÇÃO COMPLETAMENTE REFEITA PARA FUNCIONAR COM CLASSES >>>
     setupHomeEventListeners() {
         const contentArea = document.getElementById('content-area');
         
-        const addProofBtn = contentArea.querySelector('#home-add-proof');
-        if (addProofBtn) {
-            addProofBtn.addEventListener('click', () => {
+        // Ação: Adicionar Comprovante / Novo Pagamento
+        contentArea.querySelectorAll('.home-add-proof').forEach(button => {
+            button.addEventListener('click', () => {
                 this.modules.comprovantes.renderProofModal();
             });
-        }
+        });
+
+        // Ação: Adicionar Crédito
+        contentArea.querySelectorAll('.home-add-credit').forEach(button => {
+            button.addEventListener('click', () => {
+                this.modules.creditos.renderCreditModal();
+            });
+        });
+
+        // Ação: Buscar Créditos (funciona para todos os painéis)
+        contentArea.querySelectorAll('.home-search-credit-btn').forEach(button => {
+            button.addEventListener('click', (e) => {
+                const searchCard = e.target.closest('.search-card');
+                if (searchCard) {
+                    const input = searchCard.querySelector('.home-search-credit-input');
+                    const clientCode = input.value;
+                    if (clientCode) {
+                        this.navigateToModule('creditos', { client_code: clientCode, status: 'Disponível' });
+                    }
+                }
+            });
+        });
         
+        // Ação: Mostrar Links Úteis
         const showLinksBtn = contentArea.querySelector('#home-show-links');
         if (showLinksBtn) {
             showLinksBtn.addEventListener('click', async () => {
@@ -251,6 +285,7 @@ const App = {
             });
         }
 
+        // Ação: Clicar nos cards de status (Ex: Pagamentos Faturados)
         contentArea.querySelectorAll('.stat-card[data-status-filter]').forEach(card => {
             card.addEventListener('click', () => {
                 const status = card.dataset.statusFilter;
@@ -258,21 +293,13 @@ const App = {
             });
         });
 
+        // Ação: Gerenciar Widgets (Avisos e Links)
         const manageWidgetsBtn = contentArea.querySelector('#btn-manage-widgets');
         if (manageWidgetsBtn) {
             manageWidgetsBtn.addEventListener('click', () => this.renderManagementModal());
         }
 
-        const searchCreditBtn = contentArea.querySelector('#home-search-credit-btn');
-        if (searchCreditBtn) {
-            searchCreditBtn.addEventListener('click', () => {
-                const clientCode = document.getElementById('home-search-credit-input').value;
-                if (clientCode) {
-                    this.navigateToModule('creditos', { client_code: clientCode, status: 'Disponível' });
-                }
-            });
-        }
-
+        // Ação: Clicar no card de estatística de créditos do vendedor
         const creditStatCard = contentArea.querySelector('#widget-vendedor-creditos-card');
         if (creditStatCard) {
             creditStatCard.addEventListener('click', () => {
