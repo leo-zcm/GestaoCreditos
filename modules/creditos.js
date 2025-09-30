@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO FINAL COM SEGURANÇA BLINDADA E UI ADAPTATIVA)
+// modules/creditos.js (VERSÃO COM FILTRO POR Nº DE REGISTRO)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -7,21 +7,17 @@ const CreditosModule = (() => {
     const render = async (initialFilters = null) => {
         const contentArea = document.getElementById('content-area');
 
-        // ETAPA 1: VERIFICAÇÃO DE PERMISSÃO ANTES DE QUALQUER COISA
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
 
-        // Log de diagnóstico para depuração final
         console.log('[CreditosModule] VERIFICAÇÃO FINAL DE PERMISSÃO:', {
             'Permissão (creditos.view)': userPermissions.view,
             'ID de Vendedor (seller_id_erp)': App.userProfile.seller_id_erp,
             'Resultado (isOwnView)': isOwnView
         });
 
-        // ETAPA 2: RENDERIZAÇÃO CONDICIONAL DA UI DO FILTRO
         let sellerFilterHtml;
         if (isOwnView) {
-            // Se for visão própria, renderiza um campo de texto desabilitado
             sellerFilterHtml = `
                 <input 
                     type="text" 
@@ -31,7 +27,6 @@ const CreditosModule = (() => {
                     title="Você só pode visualizar seus próprios créditos."
                 >`;
         } else {
-            // Caso contrário, renderiza o dropdown normal
             sellerFilterHtml = `<select id="filter-seller"></select>`;
         }
 
@@ -43,6 +38,8 @@ const CreditosModule = (() => {
                 </div>
                 <div class="filters">
                     <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
+                    <!-- <<< MUDANÇA CRÍTICA: Adicionado o novo campo de filtro >>> -->
+                    <input type="text" id="filter-n-registro" placeholder="Nº Registro">
                     <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
                     <select id="filter-status">
                         <option value="Disponível">Disponível</option>
@@ -114,7 +111,6 @@ const CreditosModule = (() => {
             currentFilters = { ...currentFilters, ...initialFilters };
         }
         
-        // Popula o dropdown apenas se ele existir (não for 'isOwnView')
         if (!isOwnView) {
             await populateSellersDropdown();
             const sellerDropdown = document.getElementById('filter-seller');
@@ -127,7 +123,7 @@ const CreditosModule = (() => {
 
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
-        if (!sellerSelect) return; // Segurança extra
+        if (!sellerSelect) return;
         sellerSelect.innerHTML = '<option value="">Carregando...</option>';
         try {
             const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
@@ -164,6 +160,8 @@ const CreditosModule = (() => {
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
+        // <<< MUDANÇA CRÍTICA: Atualiza o valor do novo campo na UI (opcional, mas bom para consistência) >>>
+        document.getElementById('filter-n-registro').value = currentFilters.n_registro || '';
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
@@ -172,18 +170,21 @@ const CreditosModule = (() => {
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
-            // ETAPA 3: CONSULTA BLINDADA
             if (isOwnView) {
-                // FORÇA o filtro pelo ID do vendedor logado, ignorando a UI.
                 query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
             } else {
-                // Aplica o filtro da UI apenas se o usuário tiver permissão para ver todos.
                 if (currentFilters.seller_id) {
                     query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
                 }
             }
 
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
+            
+            // <<< MUDANÇA CRÍTICA: Adiciona a condição de filtro para o Nº de Registro >>>
+            if (currentFilters.n_registro) {
+                query = query.eq('n_registro', currentFilters.n_registro);
+            }
+
             if (currentFilters.client_code) {
                 query = query.eq('client_code', currentFilters.client_code.toUpperCase());
             }
@@ -498,10 +499,11 @@ const CreditosModule = (() => {
         document.getElementById('btn-new-credit').addEventListener('click', () => renderCreditModal());
         document.getElementById('btn-apply-filters').addEventListener('click', () => {
             currentFilters.client_code = document.getElementById('filter-client-code').value;
+            // <<< MUDANÇA CRÍTICA: Captura o valor do novo campo de filtro >>>
+            currentFilters.n_registro = document.getElementById('filter-n-registro').value.trim();
             currentFilters.client_name = document.getElementById('filter-client-name').value;
             currentFilters.status = document.getElementById('filter-status').value;
             
-            // Lê o filtro de vendedor apenas se o dropdown existir
             const sellerDropdown = document.getElementById('filter-seller');
             if (sellerDropdown) {
                 currentFilters.seller_id = sellerDropdown.value;
