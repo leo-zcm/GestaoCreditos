@@ -13,7 +13,7 @@
 <body>
 
     <!-- TELA DE LOGIN -->
-    <div id="login-screen" class="screen active">
+    <div id="login-screen" class="screen">
         <div class="login-container">
             <h1>Gestão de Créditos ZCM</h1>
             <p>Faça login para continuar</p>
@@ -26,7 +26,7 @@
                     <label for="password">Senha</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password">
                 </div>
-                <button type="button" id="login-button" class="btn btn-primary">Entrar</button>
+                <button type="submit" id="login-button" class="btn btn-primary">Entrar</button>
                 <p id="login-error" class="error-message"></p>
             </form>
         </div>
@@ -69,7 +69,7 @@
     </div>
     
     <!-- LOADER -->
-    <div id="loader" class="loader-overlay">
+    <div id="loader" class="loader-overlay active">
         <div class="spinner"></div>
     </div>
 
