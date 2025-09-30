@@ -184,7 +184,9 @@ const CreditosModule = (() => {
             }
 
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.client_code) query = query.ilike('client_code', `%${currentFilters.client_code}%`);
+            if (currentFilters.client_code) {
+                query = query.eq('client_code', currentFilters.client_code.toUpperCase());
+            }
             
             const dateColumn = currentFilters.date_type || 'created_at';
             if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
