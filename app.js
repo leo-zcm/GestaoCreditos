@@ -12,7 +12,7 @@ const App = {
     moduleConfig: [
         { key: 'comprovantes', name: 'Comprovantes', permissionCheck: (user) => user.permissions?.comprovantes?.view },
         { key: 'creditos', name: 'Créditos', permissionCheck: (user) => user.permissions?.creditos?.view },
-        { key: 'solicitacoes', name: 'Solicitações D/C', permissionCheck: (user) => user.permissions?.solicitacoes?.view },
+        { key: 'solicitacoes', name: 'Solicitações D/C', permissionCheck: (user) => user.permissions?.solicitacoes?.view && user.permissions.solicitacoes.view !== 'none' },
         { key: 'usuarios', name: 'Usuários', permissionCheck: (user) => user.is_admin }
     ],
 
