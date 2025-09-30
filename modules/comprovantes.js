@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO COM MÚLTIPLOS ANEXOS)
+// modules/comprovantes.js (VERSÃO COM MODAL PARA MÚLTIPLOS ANEXOS)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -10,7 +10,6 @@ const ComprovantesModule = (() => {
     };
 
     let currentFilters = { client_code: '', client_name: '', status: 'CONFIRMADO' };
-    // <<< MUDANÇA CRÍTICA >>> Agora é um array para múltiplos arquivos
     let filesToUpload = [];
     let documentPasteHandler = null;
 
@@ -38,7 +37,6 @@ const ComprovantesModule = (() => {
             const proofIds = idObjects.map(item => item.id);
             const { data: proofs, error: selectError } = await supabase
                 .from('proofs')
-                // <<< MUDANÇA CRÍTICA >>> Selecionando a nova coluna `proof_urls`
                 .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, clients_erp(client_name), payment_types(name, color)`)
                 .in('id', proofIds)
                 .order('created_at', { ascending: false });
@@ -63,11 +61,9 @@ const ComprovantesModule = (() => {
             const paymentType = proof.payment_types || { name: 'N/A', color: 'grey' };
             const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
             
-            // <<< MUDANÇA CRÍTICA >>> Lógica para o botão "Ver" com múltiplos anexos
             const hasProofs = proof.proof_urls && proof.proof_urls.length > 0;
             let viewButtonHtml = '';
             if (hasProofs) {
-                // Converte o array de URLs em uma string JSON segura para o atributo data
                 const urlsData = JSON.stringify(proof.proof_urls);
                 const buttonText = proof.proof_urls.length > 1 ? `Ver (${proof.proof_urls.length})` : 'Ver';
                 viewButtonHtml = `<button class="btn btn-secondary btn-sm" data-action="view-all" data-urls='${urlsData}'>${buttonText}</button>`;
@@ -121,7 +117,6 @@ const ComprovantesModule = (() => {
     };
 
     const renderProofModal = async (proof = null) => {
-        // <<< MUDANÇA CRÍTICA >>> Limpa o array de arquivos
         filesToUpload = [];
         cleanupModalListeners();
         App.showLoader();
@@ -139,7 +134,6 @@ const ComprovantesModule = (() => {
                 </div>
             `).join('');
 
-            // <<< MUDANÇA CRÍTICA >>> Gera a lista de comprovantes já existentes
             let existingProofsHtml = '';
             if (proof?.proof_urls && proof.proof_urls.length > 0) {
                 existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul>' + proof.proof_urls.map((url, index) => 
@@ -173,11 +167,9 @@ const ComprovantesModule = (() => {
                         <div id="file-drop-area" class="file-drop-area">
                             <p><strong>Cole (Ctrl+V)</strong> imagens, ou <strong>clique para selecionar</strong> um ou mais arquivos (imagem ou PDF).</p>
                         </div>
-                        <!-- <<< MUDANÇA CRÍTICA >>> Adicionado 'multiple' ao input de arquivo -->
                         <input type="file" id="file-input" accept="image/*,application/pdf" style="display: none;" multiple>
                         <div id="file-preview">
                             ${existingProofsHtml}
-                            <!-- Novos arquivos aparecerão aqui -->
                         </div>
                     </div>
                     <div class="form-group">
@@ -222,16 +214,36 @@ const ComprovantesModule = (() => {
         }
     };
 
+    // <<< MUDANÇA CRÍTICA >>> Nova função para renderizar o modal com os links
+    const renderViewProofsModal = (urls) => {
+        const modalBody = document.getElementById('modal-body');
+        const linksHtml = urls.map((url, index) => `
+            <li>
+                <a href="${url}" target="_blank" class="btn btn-secondary">
+                    Ver Comprovante ${index + 1}
+                </a>
+            </li>
+        `).join('');
+
+        modalBody.innerHTML = `
+            <h2>Visualizar Comprovantes</h2>
+            <ul class="proof-links-list">
+                ${linksHtml}
+            </ul>
+        `;
+        document.getElementById('modal-container').classList.add('active');
+    };
+
     const handleTableClick = async (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
         const action = button.dataset.action;
         const id = button.dataset.id;
 
-        // <<< MUDANÇA CRÍTICA >>> Nova ação para ver múltiplos comprovantes
+        // <<< MUDANÇA CRÍTICA >>> Ação "view-all" agora chama o novo modal
         if (action === 'view-all') {
             const urls = JSON.parse(button.dataset.urls);
-            urls.forEach(url => window.open(url, '_blank'));
+            renderViewProofsModal(urls);
             return;
         }
 
@@ -250,16 +262,13 @@ const ComprovantesModule = (() => {
         }
     };
     
-    // <<< MUDANÇA CRÍTICA >>> Lida com a seleção de múltiplos arquivos
     const handleFileSelect = (selectedFiles) => {
         if (selectedFiles.length > 0) {
-            // Converte FileList em Array e adiciona aos arquivos a serem enviados
             filesToUpload.push(...Array.from(selectedFiles));
             renderPreview();
         }
     };
 
-    // <<< MUDANÇA CRÍTICA >>> Lida com o "colar" de múltiplos arquivos
     const handlePaste = (e) => {
         if (!document.getElementById('modal-container').classList.contains('active')) return;
         const pastedFiles = e.clipboardData.files;
@@ -273,10 +282,8 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // <<< MUDANÇA CRÍTICA >>> Renderiza o preview de múltiplos arquivos
     const renderPreview = () => {
         const previewContainer = document.getElementById('file-preview');
-        // Limpa apenas a parte de novos previews, mantendo os existentes
         const newFilesContainer = previewContainer.querySelector('#new-files-container') || document.createElement('div');
         newFilesContainer.id = 'new-files-container';
         newFilesContainer.innerHTML = filesToUpload.length > 0 ? '<h6>Novos comprovantes a serem adicionados:</h6>' : '';
@@ -285,7 +292,6 @@ const ComprovantesModule = (() => {
         filesToUpload.forEach((file, index) => {
             const listItem = document.createElement('li');
             listItem.textContent = file.name;
-            // Opcional: Adicionar um botão de remover
             const removeBtn = document.createElement('button');
             removeBtn.textContent = ' (x)';
             removeBtn.style.border = 'none';
@@ -293,8 +299,8 @@ const ComprovantesModule = (() => {
             removeBtn.style.color = 'red';
             removeBtn.style.cursor = 'pointer';
             removeBtn.onclick = () => {
-                filesToUpload.splice(index, 1); // Remove o arquivo do array
-                renderPreview(); // Re-renderiza o preview
+                filesToUpload.splice(index, 1);
+                renderPreview();
             };
             listItem.appendChild(removeBtn);
             list.appendChild(listItem);
@@ -313,7 +319,6 @@ const ComprovantesModule = (() => {
             const proofId = form.proofId.value;
             const isNew = !proofId;
             
-            // <<< MUDANÇA CRÍTICA >>> Lógica de upload para múltiplos arquivos
             let uploadedUrls = [];
             if (filesToUpload.length > 0) {
                 for (const file of filesToUpload) {
@@ -327,20 +332,18 @@ const ComprovantesModule = (() => {
 
             let finalProofUrls = [];
             if (!isNew) {
-                // Se estiver editando, busca as URLs existentes para combinar com as novas
                 const { data: existingProof, error } = await supabase.from('proofs').select('proof_urls').eq('id', proofId).single();
                 if (error) throw error;
                 finalProofUrls = existingProof.proof_urls || [];
             }
             finalProofUrls.push(...uploadedUrls);
-            // <<< FIM DA MUDANÇA CRÍTICA >>>
 
             const proofData = {
                 client_code: form.clientCode.value.toUpperCase() || null,
                 client_name_manual: form.clientName.disabled ? null : form.clientName.value,
                 value: parseFloat(form.value.value),
                 payment_type_id: form.payment_type.value,
-                proof_urls: finalProofUrls, // Salva o array de URLs
+                proof_urls: finalProofUrls,
                 account_note: form.accountNote.value,
                 updated_at: new Date(),
             };
@@ -366,7 +369,7 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // O restante do código (renderFaturarModal, handleFaturarSubmit, renderGenerateCreditModal, etc.) permanece o mesmo.
+    // O restante do código (renderFaturarModal, etc.) permanece o mesmo...
     // ...
     const renderGenerateCreditModal = async (proofId) => {
         App.showLoader();
@@ -560,6 +563,28 @@ const ComprovantesModule = (() => {
                 </div>
             </div>
         `;
+        // <<< MUDANÇA CRÍTICA >>> Adicionando um estilo para a lista de links no modal
+        const styleId = 'comprovantes-module-style';
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement('style');
+            style.id = styleId;
+            style.innerHTML = `
+                .proof-links-list {
+                    list-style: none;
+                    padding: 0;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                }
+                .proof-links-list a {
+                    display: block;
+                    text-align: center;
+                    padding: 10px;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+
         document.getElementById('btn-new-proof').addEventListener('click', () => renderProofModal());
         document.getElementById('btn-apply-filters').addEventListener('click', () => {
             currentFilters.client_code = document.getElementById('filter-client-code').value;
