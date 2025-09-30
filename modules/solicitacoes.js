@@ -1,4 +1,4 @@
-// modules/solicitacoes.js (MÓDULO COMPLETO E FUNCIONAL)
+// modules/solicitacoes.js (VERSÃO REATORADA COM MÚLTIPLOS CRÉDITOS)
 
 const SolicitacoesModule = (() => {
     let currentFilters = { status: 'PENDENTE' };
@@ -48,9 +48,9 @@ const SolicitacoesModule = (() => {
                                 <th>Data</th>
                                 <th>Solicitante</th>
                                 <th>Débito (Cliente)</th>
-                                <th>Crédito (Cliente)</th>
+                                <th>Crédito (Clientes)</th>
                                 <th>Produto</th>
-                                <th>Valor</th>
+                                <th>Valor Total</th>
                                 <th>Status</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
@@ -73,7 +73,6 @@ const SolicitacoesModule = (() => {
     const populateSellersDropdown = async () => {
         const sellerSelect = document.getElementById('filter-seller');
         if (!sellerSelect) return;
-        // Reutiliza a mesma RPC do módulo de créditos
         const { data: sellers, error } = await supabase.rpc('get_unique_sellers');
         if (error) {
             console.error("Erro ao buscar vendedores:", error);
@@ -98,7 +97,8 @@ const SolicitacoesModule = (() => {
 
             let query = supabase.from('dc_requests').select(`
                 *,
-                requester:profiles!requester_id(full_name, seller_id_erp)
+                requester:profiles!requester_id(full_name, seller_id_erp),
+                credits:dc_request_credits(client_code)
             `);
 
             if (isOwnView) {
@@ -106,15 +106,22 @@ const SolicitacoesModule = (() => {
             } else if (currentFilters.seller_id) {
                 query = query.eq('requester.seller_id_erp', currentFilters.seller_id);
             }
-
+            
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.product_code) query = query.or(`debit_product_code.ilike.%${currentFilters.product_code}%,credit_product_code.ilike.%${currentFilters.product_code}%`);
-            if (currentFilters.client_code) query = query.or(`debit_client_code.ilike.%${currentFilters.client_code}%,credit_client_code.ilike.%${currentFilters.client_code}%`);
+            if (currentFilters.product_code) query = query.ilike('debit_product_code', `%${currentFilters.product_code}%`);
             if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
 
-            const { data: requests, error } = await query.order('created_at', { ascending: false });
+            let { data: requests, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
+            
+            if (currentFilters.client_code) {
+                const searchCode = currentFilters.client_code.toLowerCase();
+                requests = requests.filter(req => 
+                    req.debit_client_code.toLowerCase().includes(searchCode) || 
+                    req.credits.some(c => c.client_code.toLowerCase().includes(searchCode))
+                );
+            }
 
             renderTable(requests);
         } catch (error) {
@@ -137,12 +144,13 @@ const SolicitacoesModule = (() => {
         listContainer.innerHTML = requests.map(req => {
             const statusInfo = STATUS_MAP[req.status] || { text: req.status, class: '' };
             const showActions = canApprove && req.status === 'PENDENTE';
+            const creditClients = req.credits.map(c => c.client_code).join(', ');
             return `
                 <tr>
                     <td>${new Date(req.created_at).toLocaleDateString()}</td>
                     <td>${req.requester?.full_name || 'N/A'}</td>
                     <td>${req.debit_client_code}</td>
-                    <td>${req.credit_client_code}</td>
+                    <td title="${creditClients}">${req.credits.length > 1 ? 'Múltiplos' : creditClients}</td>
                     <td>${req.debit_product_code}</td>
                     <td>${req.debit_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
@@ -164,54 +172,85 @@ const SolicitacoesModule = (() => {
         modalBody.innerHTML = `
             <h2>Nova Solicitação de Débito/Crédito</h2>
             <form id="request-form">
-                <div class="form-row">
-                    <fieldset class="form-group">
-                        <legend>Dados do Débito (Cliente que pagará)</legend>
-                        <label for="debitClientCode">Cód. Cliente</label>
-                        <input type="text" id="debitClientCode" required>
-                        <label for="debitProductCode">Cód. Produto</label>
-                        <input type="text" id="debitProductCode" required>
-                        <label for="debitQuantity">Quantidade</label>
-                        <input type="number" id="debitQuantity" required>
-                        <label for="debitValue">Valor Total do Débito</label>
-                        <input type="number" step="0.01" id="debitValue" required>
-                    </fieldset>
-                    <fieldset class="form-group">
-                        <legend>Dados do Crédito (Cliente que receberá)</legend>
-                        <label for="creditClientCode">Cód. Cliente</label>
-                        <input type="text" id="creditClientCode" required>
-                        <label for="creditProductCode">Cód. Produto</label>
-                        <input type="text" id="creditProductCode" required>
-                        <label for="creditQuantity">Quantidade</label>
-                        <input type="number" id="creditQuantity" required>
-                        <label for="creditValue">Valor Total do Crédito (Calculado)</label>
-                        <input type="number" step="0.01" id="creditValue" disabled>
-                    </fieldset>
-                </div>
+                <fieldset>
+                    <legend>Dados do Débito (Origem)</legend>
+                    <div class="form-row">
+                        <div class="form-group"><label>Cód. Cliente</label><input type="text" id="debitClientCode" required></div>
+                        <div class="form-group"><label>Cód. Produto</label><input type="text" id="debitProductCode" required></div>
+                        <div class="form-group"><label>Quantidade Total</label><input type="number" id="debitQuantity" required min="1"></div>
+                        <div class="form-group"><label>Valor Total</label><input type="number" step="0.01" id="debitValue" required min="0.01"></div>
+                    </div>
+                </fieldset>
+                <fieldset>
+                    <legend>Distribuição de Créditos (Destino)</legend>
+                    <div id="credit-entries-container"></div>
+                    <div class="credit-summary">
+                        <span>Quantidade Restante: <strong id="remaining-qty">--</strong></span>
+                        <button type="button" id="btn-add-credit" class="btn btn-secondary btn-sm">Adicionar Crédito</button>
+                    </div>
+                </fieldset>
                 <p id="modal-error" class="error-message"></p>
-                <button type="submit" class="btn btn-primary">Enviar Solicitação</button>
+                <button type="submit" id="btn-submit-request" class="btn btn-primary" disabled>Enviar Solicitação</button>
             </form>
         `;
+        
+        const form = document.getElementById('request-form');
+        const creditContainer = document.getElementById('credit-entries-container');
 
-        const debitValue = document.getElementById('debitValue');
-        const debitQty = document.getElementById('debitQuantity');
-        const creditQty = document.getElementById('creditQuantity');
-        const creditValue = document.getElementById('creditValue');
-
-        const updateCreditValue = () => {
-            const dVal = parseFloat(debitValue.value);
-            const dQty = parseInt(debitQty.value);
-            const cQty = parseInt(creditQty.value);
-            if (dVal > 0 && dQty > 0 && cQty > 0) {
-                const unitPrice = dVal / dQty;
-                creditValue.value = (unitPrice * cQty).toFixed(2);
-            } else {
-                creditValue.value = '';
-            }
+        const addCreditEntry = () => {
+            const entryId = Date.now();
+            const entryDiv = document.createElement('div');
+            entryDiv.className = 'form-row credit-entry';
+            entryDiv.dataset.id = entryId;
+            entryDiv.innerHTML = `
+                <div class="form-group"><label>Cód. Cliente</label><input type="text" class="credit-client-code" required></div>
+                <div class="form-group"><label>Quantidade</label><input type="number" class="credit-quantity" required min="1"></div>
+                <div class="form-group"><label>Valor</label><input type="text" class="credit-value" disabled></div>
+                <button type="button" class="btn-remove-credit" title="Remover">&times;</button>
+            `;
+            creditContainer.appendChild(entryDiv);
         };
 
-        [debitValue, debitQty, creditQty].forEach(el => el.addEventListener('input', updateCreditValue));
-        document.getElementById('request-form').addEventListener('submit', handleRequestSubmit);
+        const updateCalculationsAndValidation = () => {
+            const debitQty = parseInt(document.getElementById('debitQuantity').value) || 0;
+            const debitValue = parseFloat(document.getElementById('debitValue').value) || 0;
+            const unitPrice = (debitQty > 0 && debitValue > 0) ? debitValue / debitQty : 0;
+            
+            let totalCreditQty = 0;
+            const creditEntries = creditContainer.querySelectorAll('.credit-entry');
+            creditEntries.forEach(entry => {
+                const creditQtyInput = entry.querySelector('.credit-quantity');
+                const creditQty = parseInt(creditQtyInput.value) || 0;
+                totalCreditQty += creditQty;
+                entry.querySelector('.credit-value').value = (unitPrice * creditQty).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            });
+
+            const remainingQty = debitQty - totalCreditQty;
+            document.getElementById('remaining-qty').textContent = remainingQty;
+
+            document.getElementById('btn-add-credit').disabled = remainingQty <= 0;
+            document.getElementById('btn-submit-request').disabled = remainingQty !== 0 || debitQty === 0 || creditEntries.length === 0;
+
+            // Valida cada campo de quantidade de crédito
+            creditEntries.forEach(entry => {
+                const creditQtyInput = entry.querySelector('.credit-quantity');
+                const currentVal = parseInt(creditQtyInput.value) || 0;
+                const maxAllowed = currentVal + remainingQty;
+                creditQtyInput.max = maxAllowed;
+            });
+        };
+        
+        addCreditEntry(); // Adiciona a primeira linha de crédito
+        form.addEventListener('input', updateCalculationsAndValidation);
+        document.getElementById('btn-add-credit').addEventListener('click', addCreditEntry);
+        creditContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('btn-remove-credit')) {
+                e.target.closest('.credit-entry').remove();
+                updateCalculationsAndValidation();
+            }
+        });
+
+        form.addEventListener('submit', handleRequestSubmit);
         document.getElementById('modal-container').classList.add('active');
     };
 
@@ -227,20 +266,32 @@ const SolicitacoesModule = (() => {
                 debit_value: parseFloat(form.debitValue.value),
                 debit_product_code: form.debitProductCode.value.toUpperCase(),
                 debit_quantity: parseInt(form.debitQuantity.value),
-                credit_client_code: form.creditClientCode.value.toUpperCase(),
-                credit_value: parseFloat(form.creditValue.value),
-                credit_product_code: form.creditProductCode.value.toUpperCase(),
-                credit_quantity: parseInt(form.creditQuantity.value),
             };
 
-            const { error } = await supabase.from('dc_requests').insert(requestData);
-            if (error) throw error;
+            const { data: newRequest, error: requestError } = await supabase.from('dc_requests').insert(requestData).select().single();
+            if (requestError) throw requestError;
+
+            const unitPrice = requestData.debit_value / requestData.debit_quantity;
+            const creditEntries = [];
+            form.querySelectorAll('.credit-entry').forEach(entry => {
+                const qty = parseInt(entry.querySelector('.credit-quantity').value);
+                creditEntries.push({
+                    request_id: newRequest.id,
+                    client_code: entry.querySelector('.credit-client-code').value.toUpperCase(),
+                    quantity: qty,
+                    value: unitPrice * qty
+                });
+            });
+
+            const { error: creditsError } = await supabase.from('dc_request_credits').insert(creditEntries);
+            if (creditsError) throw creditsError;
 
             document.getElementById('modal-container').classList.remove('active');
             await loadRequests();
         } catch (error) {
             console.error("Erro ao criar solicitação:", error);
             document.getElementById('modal-error').textContent = `Erro: ${error.message}`;
+            // TODO: Adicionar lógica para deletar a 'dc_request' se a inserção dos créditos falhar
         } finally {
             App.hideLoader();
         }
@@ -249,10 +300,9 @@ const SolicitacoesModule = (() => {
     const renderApprovalModal = async (requestId) => {
         App.showLoader();
         try {
-            const { data: req, error } = await supabase.from('dc_requests').select('*').eq('id', requestId).single();
+            const { data: req, error } = await supabase.from('dc_requests').select('*, credits:dc_request_credits(*)').eq('id', requestId).single();
             if (error) throw error;
 
-            // Busca dados do ERP para facilitar a vida do usuário
             const { data: client } = await supabase.from('clients_erp').select('client_name').eq('client_code', req.debit_client_code).single();
             const { data: product } = await supabase.from('products_erp').select('product_name').eq('product_code', req.debit_product_code).single();
 
@@ -266,13 +316,18 @@ const SolicitacoesModule = (() => {
                     <p><strong>Quantidade:</strong> ${req.debit_quantity}</p>
                     <p><strong>Valor:</strong> ${req.debit_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</p>
                 </div>
+                <hr>
+                <h4>Créditos a serem gerados:</h4>
+                <ul>
+                    ${req.credits.map(c => `<li><strong>${c.client_code}:</strong> ${c.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} (${c.quantity} un.)</li>`).join('')}
+                </ul>
                 <form id="approval-form">
                     <div class="form-group">
                         <label for="erpDebitCode">Código do Lançamento no ERP</label>
                         <input type="text" id="erpDebitCode" required>
                     </div>
                     <p id="modal-error" class="error-message"></p>
-                    <button type="submit" class="btn btn-primary">Confirmar Aprovação e Gerar Crédito</button>
+                    <button type="submit" class="btn btn-primary">Confirmar Aprovação e Gerar Créditos</button>
                 </form>
             `;
             document.getElementById('approval-form').addEventListener('submit', (e) => {
@@ -292,20 +347,19 @@ const SolicitacoesModule = (() => {
         App.showLoader();
         const erpCode = document.getElementById('erpDebitCode').value;
         try {
-            // 1. Gerar o crédito
-            const creditData = {
-                client_code: request.credit_client_code,
-                value: request.credit_value,
+            const creditsToInsert = request.credits.map(c => ({
+                client_code: c.client_code,
+                value: c.value,
                 description: `Crédito da Solicitação D/C #${request.id.substring(0, 8)}`,
-                product_code: request.credit_product_code,
-                quantity: request.credit_quantity,
+                product_code: request.debit_product_code,
+                quantity: c.quantity,
                 created_by: App.userProfile.id,
                 status: 'Disponível'
-            };
-            const { error: creditError } = await supabase.from('credits').insert(creditData);
-            if (creditError) throw new Error(`Falha ao gerar crédito: ${creditError.message}`);
+            }));
 
-            // 2. Atualizar a solicitação
+            const { error: creditError } = await supabase.from('credits').insert(creditsToInsert);
+            if (creditError) throw new Error(`Falha ao gerar créditos: ${creditError.message}`);
+
             const updateData = {
                 status: 'APROVADO',
                 processed_by: App.userProfile.id,
