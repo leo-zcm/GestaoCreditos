@@ -111,7 +111,15 @@ const SolicitacoesModule = (() => {
             }
             
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.product_code) query = query.ilike('debit_product_code', `%${currentFilters.product_code}%`);
+            if (currentFilters.product_code) {
+                query = query.eq('debit_product_code', currentFilters.product_code.toUpperCase());
+            }
+    
+            if (currentFilters.client_code) {
+                const code = currentFilters.client_code.toUpperCase();
+                query = query.or(`debit_client_code.eq.${code},credits.client_code.eq.${code}`, { foreignTable: 'dc_request_credits' });
+            }
+            
             if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
 
