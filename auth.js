@@ -1,20 +1,30 @@
-// auth.js (VERSÃO FINAL E CORRIGIDA - COM SESSION STORAGE E LÓGICA DE INICIALIZAÇÃO ROBUSTA)
+// auth.js (VERSÃO FINAL E CORRIGIDA - COM LOGOUT FORÇADO NO REFRESH)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
 
-// <<< MUDANÇA CRÍTICA >>>
-// Adicionamos um objeto de opções para forçar o uso do sessionStorage.
-// Isso faz com que o login seja encerrado automaticamente ao fechar a aba do navegador.
 const supabaseOptions = {
     auth: {
-        storage: sessionStorage, // Usa sessionStorage em vez de localStorage
+        storage: sessionStorage,
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true
     },
 };
 const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, supabaseOptions);
+
+// <<< MUDANÇA CRÍTICA: LOGOUT AUTOMÁTICO AO RECARREGAR A PÁGINA >>>
+// Adicionamos um event listener para o evento 'beforeunload'.
+// Este evento dispara quando o usuário tenta fechar a aba ou recarregar a página.
+// Ao chamar signOut() aqui, garantimos que a sessão seja limpa ANTES da página recarregar.
+// O `localStorage.clear()` é uma garantia extra para limpar qualquer resquício.
+window.addEventListener('beforeunload', (event) => {
+    // Importante: Não podemos usar 'await' aqui. A ação deve ser síncrona.
+    supabase.auth.signOut();
+    // Apenas para garantir, limpamos o sessionStorage explicitamente.
+    sessionStorage.clear();
+});
+
 
 async function getUserProfile(userId) {
     try {
@@ -36,25 +46,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginScreen = document.getElementById("login-screen");
     const appScreen = document.getElementById("app-screen");
     const loginForm = document.getElementById("login-form");
-    const loginButton = document.getElementById("login-button");
     const logoutButton = document.getElementById("logout-button");
     const loginError = document.getElementById("login-error");
     const loader = document.getElementById("loader");
 
-    // <<< MUDANÇA CRÍTICA >>>
-    // Funções de controle de UI simplificadas. O loader agora é o estado padrão.
     const showLoader = () => loader.classList.add("active");
     const hideLoader = () => loader.classList.remove("active");
     
     const showAppScreen = () => {
         appScreen.classList.add("active");
         loginScreen.classList.remove("active");
-        hideLoader(); // O loader é escondido apenas quando a tela correta é exibida
+        hideLoader();
     };
     const showLoginScreen = () => {
         loginScreen.classList.add("active");
         appScreen.classList.remove("active");
-        hideLoader(); // O loader é escondido apenas quando a tela correta é exibida
+        hideLoader();
     };
 
     const usernameInput = document.getElementById("username");
@@ -72,7 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
     passwordInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
             e.preventDefault();
-            loginButton.click();
+            document.getElementById("login-button").click();
         }
     });
 
@@ -86,8 +93,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!username || !password) {
             loginError.textContent = "Usuário e senha são obrigatórios.";
-            // <<< MUDANÇA CRÍTICA >>> Não escondemos o loader aqui, deixamos o fluxo continuar
-            // para que a tela de login seja exibida corretamente no final.
             showLoginScreen(); 
             return;
         }
@@ -117,28 +122,18 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             console.error("Erro no processo de login:", error.message);
             loginError.textContent = error.message;
-            showLoginScreen(); // Em caso de erro, garante que a tela de login seja exibida
+            showLoginScreen();
         } 
-        // <<< MUDANÇA CRÍTICA >>> O `finally` não é mais necessário aqui, pois
-        // `showAppScreen` e `showLoginScreen` já cuidam de esconder o loader.
     };
 
-    // <<< MUDANÇA CRÍTICA >>> Agora o evento é 'submit'
     loginForm.addEventListener("submit", handleLogin);
 
     logoutButton.addEventListener("click", async () => {
         showLoader();
         await supabase.auth.signOut();
-        // O onAuthStateChange cuidará de mostrar a tela de login
     });
 
-    // ===========================================================
-    // GERENCIAMENTO DE SESSÃO (AGORA 100% ROBUSTO)
-    // ===========================================================
     supabase.auth.onAuthStateChange(async (event, session) => {
-        // O loader já está ativo por padrão no carregamento da página.
-        // Não precisamos de flags complexas aqui, a lógica é linear.
-
         if (event === "SIGNED_OUT") {
             App.destroy();
             showLoginScreen();
@@ -146,7 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (session && session.user) {
-            // Se já existe uma sessão (ex: F5 na página)
             try {
                 if (!App.isInitialized()) {
                     const userProfile = await getUserProfile(session.user.id);
@@ -154,12 +148,10 @@ document.addEventListener("DOMContentLoaded", () => {
                         App.init(userProfile);
                         showAppScreen();
                     } else {
-                        // Caso raro: sessão existe mas perfil não foi encontrado
                         console.error("Sessão válida, mas perfil não encontrado. Forçando logout.");
                         await supabase.auth.signOut();
                     }
                 } else {
-                    // App já inicializado, apenas garante que a tela correta está visível
                     showAppScreen();
                 }
             } catch (error) {
@@ -167,7 +159,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 await supabase.auth.signOut();
             }
         } else {
-            // Nenhuma sessão encontrada
             App.destroy();
             showLoginScreen();
         }
