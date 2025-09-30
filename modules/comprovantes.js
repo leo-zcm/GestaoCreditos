@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO COM GERAÇÃO DE CRÉDITO INTEGRADA)
+// modules/comprovantes.js (VERSÃO COM MÚLTIPLOS ANEXOS)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -10,7 +10,8 @@ const ComprovantesModule = (() => {
     };
 
     let currentFilters = { client_code: '', client_name: '', status: 'CONFIRMADO' };
-    let fileToUpload = null;
+    // <<< MUDANÇA CRÍTICA >>> Agora é um array para múltiplos arquivos
+    let filesToUpload = [];
     let documentPasteHandler = null;
 
     const loadProofs = async (initialFilters = null) => {
@@ -37,7 +38,8 @@ const ComprovantesModule = (() => {
             const proofIds = idObjects.map(item => item.id);
             const { data: proofs, error: selectError } = await supabase
                 .from('proofs')
-                .select(`id, created_at, client_code, value, status, proof_url, faturado_pedido_code, client_name_manual, clients_erp(client_name), payment_types(name, color)`)
+                // <<< MUDANÇA CRÍTICA >>> Selecionando a nova coluna `proof_urls`
+                .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, clients_erp(client_name), payment_types(name, color)`)
                 .in('id', proofIds)
                 .order('created_at', { ascending: false });
             if (selectError) throw selectError;
@@ -60,7 +62,18 @@ const ComprovantesModule = (() => {
             const statusInfo = STATUS_MAP[proof.status] || { text: proof.status, class: '' };
             const paymentType = proof.payment_types || { name: 'N/A', color: 'grey' };
             const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
-            let actions = { view: !!proof.proof_url, edit: false, confirm: false, faturar: false, baixar: false, credit: false };
+            
+            // <<< MUDANÇA CRÍTICA >>> Lógica para o botão "Ver" com múltiplos anexos
+            const hasProofs = proof.proof_urls && proof.proof_urls.length > 0;
+            let viewButtonHtml = '';
+            if (hasProofs) {
+                // Converte o array de URLs em uma string JSON segura para o atributo data
+                const urlsData = JSON.stringify(proof.proof_urls);
+                const buttonText = proof.proof_urls.length > 1 ? `Ver (${proof.proof_urls.length})` : 'Ver';
+                viewButtonHtml = `<button class="btn btn-secondary btn-sm" data-action="view-all" data-urls='${urlsData}'>${buttonText}</button>`;
+            }
+
+            let actions = { edit: false, confirm: false, faturar: false, baixar: false, credit: false };
             const userPermissions = App.userProfile.permissions?.comprovantes || {};
             switch (proof.status) {
                 case 'AGUARDANDO CONFIRMAÇÃO':
@@ -87,7 +100,7 @@ const ComprovantesModule = (() => {
                     <td>${proof.faturado_pedido_code || '---'}</td>
                     <td class="col-actions">
                         <div class="action-buttons">
-                            ${actions.view ? `<a href="${proof.proof_url}" target="_blank" class="btn btn-secondary btn-sm">Ver</a>` : ''}
+                            ${viewButtonHtml}
                             ${actions.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${proof.id}">Editar</button>` : ''}
                             ${actions.confirm ? `<button class="btn btn-success btn-sm" data-action="confirm" data-id="${proof.id}">Confirmar</button>` : ''}
                             ${actions.faturar ? `<button class="btn btn-primary btn-sm" data-action="faturar" data-id="${proof.id}">Faturar</button>` : ''}
@@ -108,7 +121,8 @@ const ComprovantesModule = (() => {
     };
 
     const renderProofModal = async (proof = null) => {
-        fileToUpload = null;
+        // <<< MUDANÇA CRÍTICA >>> Limpa o array de arquivos
+        filesToUpload = [];
         cleanupModalListeners();
         App.showLoader();
         try {
@@ -124,6 +138,15 @@ const ComprovantesModule = (() => {
                     <label for="pt-${pt.id}">${pt.name}</label>
                 </div>
             `).join('');
+
+            // <<< MUDANÇA CRÍTICA >>> Gera a lista de comprovantes já existentes
+            let existingProofsHtml = '';
+            if (proof?.proof_urls && proof.proof_urls.length > 0) {
+                existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul>' + proof.proof_urls.map((url, index) => 
+                    `<li><a href="${url}" target="_blank">Comprovante ${index + 1}</a></li>`
+                ).join('') + '</ul>';
+            }
+
             const modalBody = document.getElementById('modal-body');
             modalBody.innerHTML = `
                 <h2>${isNew ? 'Novo Pagamento' : 'Editar Pagamento'}</h2>
@@ -135,12 +158,7 @@ const ComprovantesModule = (() => {
                     </div>
                     <div class="form-group">
                         <label for="clientName">Nome do Cliente</label>
-                        <input 
-                            type="text" 
-                            id="clientName" 
-                            value="${proof?.clients_erp?.client_name || proof?.client_name_manual || ''}" 
-                            placeholder="${clientNameDisabled ? 'Preencha o código do cliente' : ''}"
-                            ${clientNameDisabled ? 'disabled' : ''}>
+                        <input type="text" id="clientName" value="${proof?.clients_erp?.client_name || proof?.client_name_manual || ''}" placeholder="${clientNameDisabled ? 'Preencha o código do cliente' : ''}" ${clientNameDisabled ? 'disabled' : ''}>
                     </div>
                     <div class="form-group">
                         <label for="value">Valor</label>
@@ -151,13 +169,15 @@ const ComprovantesModule = (() => {
                         <div class="payment-types-container">${paymentTypesHtml}</div>
                     </fieldset>
                     <div class="form-group">
-                        <label>Comprovante</label>
+                        <label>Comprovante(s)</label>
                         <div id="file-drop-area" class="file-drop-area">
-                            <p><strong>Cole (Ctrl+V)</strong> uma imagem aqui, ou <strong>clique para selecionar</strong> um arquivo (imagem ou PDF).</p>
+                            <p><strong>Cole (Ctrl+V)</strong> imagens, ou <strong>clique para selecionar</strong> um ou mais arquivos (imagem ou PDF).</p>
                         </div>
-                        <input type="file" id="file-input" accept="image/*,application/pdf" style="display: none;">
+                        <!-- <<< MUDANÇA CRÍTICA >>> Adicionado 'multiple' ao input de arquivo -->
+                        <input type="file" id="file-input" accept="image/*,application/pdf" style="display: none;" multiple>
                         <div id="file-preview">
-                            ${proof?.proof_url ? `<a href="${proof.proof_url}" target="_blank">Ver comprovante atual</a>` : ''}
+                            ${existingProofsHtml}
+                            <!-- Novos arquivos aparecerão aqui -->
                         </div>
                     </div>
                     <div class="form-group">
@@ -207,6 +227,14 @@ const ComprovantesModule = (() => {
         if (!button) return;
         const action = button.dataset.action;
         const id = button.dataset.id;
+
+        // <<< MUDANÇA CRÍTICA >>> Nova ação para ver múltiplos comprovantes
+        if (action === 'view-all') {
+            const urls = JSON.parse(button.dataset.urls);
+            urls.forEach(url => window.open(url, '_blank'));
+            return;
+        }
+
         if (action === 'edit') {
             const { data: proofToEdit, error } = await supabase.from('proofs').select('*, clients_erp(client_name)').eq('id', id).single();
             if (proofToEdit) renderProofModal(proofToEdit);
@@ -221,7 +249,125 @@ const ComprovantesModule = (() => {
             renderGenerateCreditModal(id);
         }
     };
+    
+    // <<< MUDANÇA CRÍTICA >>> Lida com a seleção de múltiplos arquivos
+    const handleFileSelect = (selectedFiles) => {
+        if (selectedFiles.length > 0) {
+            // Converte FileList em Array e adiciona aos arquivos a serem enviados
+            filesToUpload.push(...Array.from(selectedFiles));
+            renderPreview();
+        }
+    };
 
+    // <<< MUDANÇA CRÍTICA >>> Lida com o "colar" de múltiplos arquivos
+    const handlePaste = (e) => {
+        if (!document.getElementById('modal-container').classList.contains('active')) return;
+        const pastedFiles = e.clipboardData.files;
+        if (pastedFiles.length > 0) {
+            const imageFiles = Array.from(pastedFiles).filter(file => file.type.startsWith('image/'));
+            if (imageFiles.length > 0) {
+                e.preventDefault();
+                filesToUpload.push(...imageFiles);
+                renderPreview();
+            }
+        }
+    };
+
+    // <<< MUDANÇA CRÍTICA >>> Renderiza o preview de múltiplos arquivos
+    const renderPreview = () => {
+        const previewContainer = document.getElementById('file-preview');
+        // Limpa apenas a parte de novos previews, mantendo os existentes
+        const newFilesContainer = previewContainer.querySelector('#new-files-container') || document.createElement('div');
+        newFilesContainer.id = 'new-files-container';
+        newFilesContainer.innerHTML = filesToUpload.length > 0 ? '<h6>Novos comprovantes a serem adicionados:</h6>' : '';
+
+        const list = document.createElement('ul');
+        filesToUpload.forEach((file, index) => {
+            const listItem = document.createElement('li');
+            listItem.textContent = file.name;
+            // Opcional: Adicionar um botão de remover
+            const removeBtn = document.createElement('button');
+            removeBtn.textContent = ' (x)';
+            removeBtn.style.border = 'none';
+            removeBtn.style.background = 'transparent';
+            removeBtn.style.color = 'red';
+            removeBtn.style.cursor = 'pointer';
+            removeBtn.onclick = () => {
+                filesToUpload.splice(index, 1); // Remove o arquivo do array
+                renderPreview(); // Re-renderiza o preview
+            };
+            listItem.appendChild(removeBtn);
+            list.appendChild(listItem);
+        });
+        newFilesContainer.appendChild(list);
+        previewContainer.appendChild(newFilesContainer);
+    };
+
+    const handleProofSubmit = async (e) => {
+        e.preventDefault();
+        App.showLoader();
+        const form = e.target;
+        const errorP = document.getElementById('modal-error');
+        errorP.textContent = '';
+        try {
+            const proofId = form.proofId.value;
+            const isNew = !proofId;
+            
+            // <<< MUDANÇA CRÍTICA >>> Lógica de upload para múltiplos arquivos
+            let uploadedUrls = [];
+            if (filesToUpload.length > 0) {
+                for (const file of filesToUpload) {
+                    const filePath = `${App.userProfile.id}/${Date.now()}-${file.name}`;
+                    const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, file);
+                    if (uploadError) throw new Error(`Falha no upload do arquivo ${file.name}: ${uploadError.message}`);
+                    const { data: urlData } = supabase.storage.from('comprovantes').getPublicUrl(filePath);
+                    uploadedUrls.push(urlData.publicUrl);
+                }
+            }
+
+            let finalProofUrls = [];
+            if (!isNew) {
+                // Se estiver editando, busca as URLs existentes para combinar com as novas
+                const { data: existingProof, error } = await supabase.from('proofs').select('proof_urls').eq('id', proofId).single();
+                if (error) throw error;
+                finalProofUrls = existingProof.proof_urls || [];
+            }
+            finalProofUrls.push(...uploadedUrls);
+            // <<< FIM DA MUDANÇA CRÍTICA >>>
+
+            const proofData = {
+                client_code: form.clientCode.value.toUpperCase() || null,
+                client_name_manual: form.clientName.disabled ? null : form.clientName.value,
+                value: parseFloat(form.value.value),
+                payment_type_id: form.payment_type.value,
+                proof_urls: finalProofUrls, // Salva o array de URLs
+                account_note: form.accountNote.value,
+                updated_at: new Date(),
+            };
+            if (isNew) {
+                proofData.created_by = App.userProfile.id;
+                proofData.status = 'AGUARDANDO CONFIRMAÇÃO';
+                const { error } = await supabase.from('proofs').insert(proofData);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('proofs').update(proofData).eq('id', proofId);
+                if (error) throw error;
+            }
+            cleanupModalListeners();
+            document.getElementById('modal-container').classList.remove('active');
+            if (document.getElementById('proofs-list')) {
+                await loadProofs();
+            }
+        } catch (error) {
+            console.error("Erro ao salvar comprovante:", error);
+            errorP.textContent = error.message;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    // O restante do código (renderFaturarModal, handleFaturarSubmit, renderGenerateCreditModal, etc.) permanece o mesmo.
+    // ...
     const renderGenerateCreditModal = async (proofId) => {
         App.showLoader();
         try {
@@ -303,91 +449,6 @@ const ComprovantesModule = (() => {
         } catch (error) {
             console.error(`Erro ao atualizar status para ${newStatus}:`, error);
             alert('Falha ao atualizar o status.');
-            App.hideLoader();
-        }
-    };
-
-    const handleFileSelect = (files) => {
-        if (files.length > 0) {
-            fileToUpload = files[0];
-            renderPreview(fileToUpload);
-        }
-    };
-
-    const handlePaste = (e) => {
-        if (!document.getElementById('modal-container').classList.contains('active')) return;
-        const files = e.clipboardData.files;
-        if (files.length > 0 && files[0].type.startsWith('image/')) {
-            e.preventDefault();
-            fileToUpload = files[0];
-            renderPreview(fileToUpload);
-        }
-    };
-
-    const renderPreview = (file) => {
-        const previewContainer = document.getElementById('file-preview');
-        previewContainer.innerHTML = '';
-        if (file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const img = document.createElement('img');
-                img.src = e.target.result;
-                previewContainer.appendChild(img);
-            };
-            reader.readAsDataURL(file);
-        } else if (file.type === 'application/pdf') {
-            previewContainer.innerHTML = `<p><span class="pdf-icon">📄</span> ${file.name}</p>`;
-        }
-    };
-
-    const handleProofSubmit = async (e) => {
-        e.preventDefault();
-        App.showLoader();
-        const form = e.target;
-        const errorP = document.getElementById('modal-error');
-        errorP.textContent = '';
-        try {
-            const proofId = form.proofId.value;
-            const isNew = !proofId;
-            let proofUrl = null;
-            if(!isNew) {
-                const { data } = await supabase.from('proofs').select('proof_url').eq('id', proofId).single();
-                proofUrl = data.proof_url;
-            }
-            if (fileToUpload) {
-                const filePath = `${App.userProfile.id}/${Date.now()}-${fileToUpload.name}`;
-                const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, fileToUpload, { upsert: true });
-                if (uploadError) throw new Error(`Falha no upload: ${uploadError.message}`);
-                const { data: urlData } = supabase.storage.from('comprovantes').getPublicUrl(filePath);
-                proofUrl = urlData.publicUrl;
-            }
-            const proofData = {
-                client_code: form.clientCode.value.toUpperCase() || null,
-                client_name_manual: form.clientName.disabled ? null : form.clientName.value,
-                value: parseFloat(form.value.value),
-                payment_type_id: form.payment_type.value,
-                proof_url: proofUrl,
-                account_note: form.accountNote.value,
-                updated_at: new Date(),
-            };
-            if (isNew) {
-                proofData.created_by = App.userProfile.id;
-                proofData.status = 'AGUARDANDO CONFIRMAÇÃO';
-                const { error } = await supabase.from('proofs').insert(proofData);
-                if (error) throw error;
-            } else {
-                const { error } = await supabase.from('proofs').update(proofData).eq('id', proofId);
-                if (error) throw error;
-            }
-            cleanupModalListeners();
-            document.getElementById('modal-container').classList.remove('active');
-            if (document.getElementById('proofs-list')) {
-                await loadProofs();
-            }
-        } catch (error) {
-            console.error("Erro ao salvar comprovante:", error);
-            errorP.textContent = error.message;
-        } finally {
             App.hideLoader();
         }
     };
