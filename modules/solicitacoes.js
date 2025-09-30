@@ -93,17 +93,17 @@ const SolicitacoesModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('requests-list');
         listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>';
-
+    
         try {
             const userPermissions = App.userProfile.permissions?.solicitacoes || {};
             const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-
+    
             let query = supabase.from('dc_requests').select(`
                 *,
                 requester:profiles!requester_id(full_name, seller_id_erp),
                 credits:dc_request_credits(*)
             `);
-
+    
             if (isOwnView) {
                 query = query.eq('requester_id', App.userProfile.id);
             } else if (currentFilters.seller_id) {
@@ -111,30 +111,22 @@ const SolicitacoesModule = (() => {
             }
             
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
+            
             if (currentFilters.product_code) {
                 query = query.eq('debit_product_code', currentFilters.product_code.toUpperCase());
             }
     
             if (currentFilters.client_code) {
                 const code = currentFilters.client_code.toUpperCase();
-                query = query.or(`debit_client_code.eq.${code},credits.client_code.eq.${code}`, { foreignTable: 'dc_request_credits' });
+                query = query.or(`debit_client_code.eq.${code},credits.client_code.eq.${code}`);
             }
-            
+    
             if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
-
+    
             let { data: requests, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
             
-            if (currentFilters.client_code) {
-                const searchCode = currentFilters.client_code.toLowerCase();
-                requests = requests.filter(req => 
-                    req.debit_client_code.toLowerCase().includes(searchCode) || 
-                    req.credits.some(c => c.client_code.toLowerCase().includes(searchCode))
-                );
-            }
-
-            // <<< MELHORIA: BUSCA OTIMIZADA DE NOMES >>>
             if (requests.length > 0) {
                 const clientCodes = new Set();
                 const productCodes = new Set();
@@ -143,15 +135,14 @@ const SolicitacoesModule = (() => {
                     req.credits.forEach(c => clientCodes.add(c.client_code));
                     productCodes.add(req.debit_product_code);
                 });
-
+    
                 const { data: clients } = await supabase.from('clients_erp').select('client_code, client_name').in('client_code', Array.from(clientCodes));
                 const { data: products } = await supabase.from('products_erp').select('product_code, product_name').in('product_code', Array.from(productCodes));
-
+    
                 clientNamesMap = new Map(clients.map(c => [c.client_code, c.client_name]));
                 productNamesMap = new Map(products.map(p => [p.product_code, p.product_name]));
             }
-            // <<< FIM DA MELHORIA >>>
-
+    
             renderTable(requests);
         } catch (error) {
             console.error("Erro ao carregar solicitações:", error);
