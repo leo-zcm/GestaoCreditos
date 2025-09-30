@@ -1,4 +1,4 @@
-// app.js (VERSÃO COM HOME MELHORADA E FUNCIONAL)
+// app.js (VERSÃO BLINDADA CONTRA LOADING INFINITO)
 
 const App = {
     userProfile: null,
@@ -59,6 +59,7 @@ const App = {
     async loadModule(moduleName, initialFilters = null) {
         this.unsubscribeFromDashboardChanges();
         this.showLoader();
+        // <<< MUDANÇA CRÍTICA: BLINDAGEM ANTI-LOADING >>>
         try {
             const module = this.modules[moduleName];
             const moduleConf = this.moduleConfig.find(m => m.key === moduleName);
@@ -73,6 +74,7 @@ const App = {
             console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
             document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro grave ao carregar este módulo.</div>`;
         } finally {
+            // Esta linha garante que o loader SEMPRE será escondido, com ou sem erro.
             this.hideLoader();
         }
     },
@@ -89,65 +91,74 @@ const App = {
     async renderHome() {
         this.showLoader();
         document.getElementById('header-title').textContent = 'Início';
-        const contentArea = document.getElementById('content-area');
-        const userRoles = this.userProfile.roles || [];
+        // <<< MUDANÇA CRÍTICA: BLINDAGEM ANTI-LOADING >>>
+        try {
+            const contentArea = document.getElementById('content-area');
+            const userRoles = this.userProfile.roles || [];
 
-        const canManageWidgets = this.userProfile.permissions?.home?.manage_widgets;
-        let managementButtonHtml = canManageWidgets 
-            ? `<button id="btn-manage-widgets" class="btn btn-secondary">Gerenciar Avisos e Links</button>` 
-            : '';
+            const canManageWidgets = this.userProfile.permissions?.home?.manage_widgets;
+            let managementButtonHtml = canManageWidgets 
+                ? `<button id="btn-manage-widgets" class="btn btn-secondary">Gerenciar Avisos e Links</button>` 
+                : '';
 
-        let dashboardHtml = `
-            <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
-                ${managementButtonHtml}
-            </div>`;
-        
-        const roleRenderers = {
-            'VENDEDOR': this._renderVendedorDashboard,
-            'CAIXA': this._renderCaixaDashboard,
-            'FINANCEIRO': this._renderFinanceiroDashboard,
-            'FATURISTA': this._renderFaturistaDashboard,
-            'GARANTIA': this._renderGarantiaDashboard,
-        };
+            let dashboardHtml = `
+                <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Bem-vindo, ${this.userProfile.full_name}!</h2>
+                    ${managementButtonHtml}
+                </div>`;
+            
+            const roleRenderers = {
+                'VENDEDOR': this._renderVendedorDashboard,
+                'CAIXA': this._renderCaixaDashboard,
+                'FINANCEIRO': this._renderFinanceiroDashboard,
+                'FATURISTA': this._renderFaturistaDashboard,
+                'GARANTIA': this._renderGarantiaDashboard,
+            };
 
-        let renderedSections = new Set();
-        for (const role of userRoles) {
-            if (roleRenderers[role] && !renderedSections.has(role)) {
-                dashboardHtml += await roleRenderers[role].call(this);
-                renderedSections.add(role);
+            let renderedSections = new Set();
+            for (const role of userRoles) {
+                if (roleRenderers[role] && !renderedSections.has(role)) {
+                    dashboardHtml += await roleRenderers[role].call(this);
+                    renderedSections.add(role);
+                }
             }
-        }
 
-        if (renderedSections.size === 0 && !canManageWidgets) {
-            dashboardHtml += '<div class="card"><p>Você não possui uma função com dashboard definido.</p></div>';
-        }
+            if (renderedSections.size === 0 && !canManageWidgets) {
+                dashboardHtml += '<div class="card"><p>Você não possui uma função com dashboard definido.</p></div>';
+            }
 
-        contentArea.innerHTML = dashboardHtml;
-        this.setupHomeEventListeners();
-        this.updateDashboardStats();
-        this.subscribeToDashboardChanges();
-        this.hideLoader();
+            contentArea.innerHTML = dashboardHtml;
+            this.setupHomeEventListeners();
+            this.updateDashboardStats();
+            this.subscribeToDashboardChanges();
+        } catch (error) {
+            console.error("Erro grave ao renderizar a Home:", error);
+            document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro ao carregar o painel inicial. Tente novamente mais tarde.</div>`;
+        } finally {
+            // Esta linha garante que o loader SEMPRE será escondido, com ou sem erro.
+            this.hideLoader();
+        }
     },
 
+    // ... (o resto do seu arquivo app.js permanece exatamente igual)
+    // ... (funções _renderVendedorDashboard, _renderCaixaDashboard, etc.)
+    // ... (funções setupHomeEventListeners, renderManagementModal, etc.)
+    // ...
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
 
-        // <<< MELHORIA: VERIFICAÇÃO DE PERMISSÃO PARA SOLICITAÇÕES >>>
         const canViewSolicitacoes = this.userProfile.permissions?.solicitacoes?.view && this.userProfile.permissions.solicitacoes.view !== 'none';
         const canCreateSolicitacoes = this.userProfile.permissions?.solicitacoes?.create;
 
         return `
             <div class="dashboard-section">
                 <div class="dashboard-grid">
-                    <!-- <<< MELHORIA: CARD DE AVISOS MOVIDO PARA O TOPO >>> -->
                     <div class="card avisos-card"><h3>Avisos</h3>${avisosHtml}</div>
 
                     <div class="card quick-action-card">
                         <h3>Ações Rápidas</h3>
                         <button class="btn btn-primary home-add-proof">Adicionar Comprovante</button>
-                        <!-- <<< MELHORIA: BOTÃO CONDICIONAL >>> -->
                         ${canCreateSolicitacoes ? '<button id="home-add-solicitacao" class="btn btn-secondary">Nova Solicitação D/C</button>' : ''}
                         <button id="home-show-links" class="btn btn-info">Links Úteis</button>
                     </div>
@@ -164,7 +175,6 @@ const App = {
                         <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
                         <div class="stat-label">Clientes com Crédito</div>
                     </div>
-                    <!-- <<< MELHORIA: CARD CONDICIONAL >>> -->
                     ${canViewSolicitacoes ? `
                         <div id="widget-vendedor-solicitacoes-card" class="card stat-card is-warning">
                             <div id="widget-vendedor-solicitacoes-count" class="stat-number">--</div>
@@ -258,7 +268,6 @@ const App = {
             });
         });
 
-        // <<< MELHORIA: EVENTO PARA O NOVO BOTÃO DE SOLICITAÇÃO >>>
         const addSolicitacaoBtn = contentArea.querySelector('#home-add-solicitacao');
         if (addSolicitacaoBtn) {
             addSolicitacaoBtn.addEventListener('click', () => {
@@ -317,7 +326,6 @@ const App = {
             });
         }
 
-        // <<< MELHORIA: EVENTO PARA O CARD DE SOLICITAÇÕES PENDENTES >>>
         const solicitacoesStatCard = contentArea.querySelector('#widget-vendedor-solicitacoes-card');
         if (solicitacoesStatCard) {
             solicitacoesStatCard.addEventListener('click', () => {
@@ -504,7 +512,6 @@ const App = {
         }
 
         if (this.userProfile.roles.includes('VENDEDOR') && this.userProfile.seller_id_erp) {
-            // Atualiza card de créditos
             const creditCountEl = document.getElementById('widget-vendedor-creditos-count');
             if (creditCountEl) {
                 const { data: creditData, error: creditError } = await supabase.rpc('get_vendedor_credit_stats', {
@@ -513,7 +520,6 @@ const App = {
                 creditCountEl.textContent = creditError ? 'Erro' : creditData;
             }
 
-            // <<< MELHORIA: ATUALIZA CARD DE SOLICITAÇÕES PENDENTES >>>
             const solicitacoesCountEl = document.getElementById('widget-vendedor-solicitacoes-count');
             if (solicitacoesCountEl) {
                 const { data: reqData, error: reqError } = await supabase.rpc('get_vendedor_pending_requests_count', {
@@ -536,7 +542,7 @@ const App = {
             .channel('dashboard-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'proofs' }, handleDbChange)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'credits' }, handleDbChange)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'dc_requests' }, handleDbChange) // <<< ADICIONADO PARA ATUALIZAR EM TEMPO REAL >>>
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'dc_requests' }, handleDbChange)
             .subscribe((status, err) => {
                 if (status === 'SUBSCRIBED') {
                     console.log('Conectado ao canal de realtime do dashboard!');
