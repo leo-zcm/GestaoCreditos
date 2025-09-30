@@ -1,4 +1,4 @@
-// modules/solicitacoes.js (VERSÃO COM TOOLTIPS/MODAIS INFORMATIVOS)
+// modules/solicitacoes.js
 
 const SolicitacoesModule = (() => {
     let currentFilters = { status: 'PENDENTE' };
@@ -97,34 +97,26 @@ const SolicitacoesModule = (() => {
         try {
             const userPermissions = App.userProfile.permissions?.solicitacoes || {};
             const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
+
+            const rpcParams = {
+                p_status: currentFilters.status || null,
+                p_product_code: currentFilters.product_code ? currentFilters.product_code.toUpperCase() : null,
+                p_client_code: currentFilters.client_code ? currentFilters.client_code.toUpperCase() : null,
+                p_requester_id: isOwnView ? App.userProfile.id : null, // Filtra por usuário se for 'own view'
+                p_seller_id: !isOwnView ? (currentFilters.seller_id || null) : null, // Filtra por vendedor se NÃO for 'own view'
+                p_date_start: currentFilters.date_start || null,
+                p_date_end: currentFilters.date_end || null
+            };
     
-            let query = supabase.from('dc_requests').select(`
-                *,
-                requester:profiles!requester_id(full_name, seller_id_erp),
-                credits:dc_request_credits(*)
-            `);
+            let { data: requests, error } = await supabase
+                .rpc('filter_dc_requests', rpcParams)
+                .select(`
+                    *,
+                    requester:profiles!requester_id(full_name, seller_id_erp),
+                    credits:dc_request_credits(*)
+                `)
+                .order('created_at', { ascending: false });
     
-            if (isOwnView) {
-                query = query.eq('requester_id', App.userProfile.id);
-            } else if (currentFilters.seller_id) {
-                query = query.eq('requester.seller_id_erp', currentFilters.seller_id);
-            }
-            
-            if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            
-            if (currentFilters.product_code) {
-                query = query.eq('debit_product_code', currentFilters.product_code.toUpperCase());
-            }
-    
-            if (currentFilters.client_code) {
-                const code = currentFilters.client_code.toUpperCase();
-                query = query.or(`debit_client_code.eq.${code},credits.client_code.eq.${code}`);
-            }
-    
-            if (currentFilters.date_start) query = query.gte('created_at', currentFilters.date_start);
-            if (currentFilters.date_end) query = query.lte('created_at', currentFilters.date_end + 'T23:59:59');
-    
-            let { data: requests, error } = await query.order('created_at', { ascending: false });
             if (error) throw error;
             
             if (requests.length > 0) {
