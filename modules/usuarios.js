@@ -1,8 +1,7 @@
-// modules/usuarios.js (VERSÃO PREPARADA PARA CRÉDITOS E WIDGETS)
+// modules/usuarios.js (VERSÃO COM CRIAÇÃO DE EMAIL FLEXÍVEL)
 
 const UsuariosModule = (() => {
     const ALL_PERMISSIONS = {
-        // <<< ALTERAÇÃO AQUI: Nova permissão para o botão da Home >>>
         home: {
             label: 'Tela Inicial',
             perms: {
@@ -82,12 +81,16 @@ const UsuariosModule = (() => {
                     <label for="username">Usuário (somente maiúsculas)</label>
                     <input type="text" id="username" value="${user ? user.username : ''}" ${!isNewUser ? 'disabled' : ''} style="text-transform: uppercase;" required>
                 </div>
-                <!-- <<< ALTERAÇÃO AQUI: Novo campo para ID de Vendedor >>> -->
                 <div class="form-group">
                     <label for="sellerIdErp">ID de Vendedor (ERP)</label>
                     <input type="text" id="sellerIdErp" value="${user?.seller_id_erp || ''}" style="text-transform: uppercase;">
                 </div>
                 ${isNewUser ? `
+                <!-- <<< MUDANÇA CRÍTICA: Adicionado campo de email opcional >>> -->
+                <div class="form-group">
+                    <label for="email">Email (opcional)</label>
+                    <input type="email" id="email" placeholder="Deixe em branco para gerar automaticamente">
+                </div>
                 <div class="form-group">
                     <label for="password">Senha</label>
                     <input type="password" id="password" required>
@@ -114,8 +117,7 @@ const UsuariosModule = (() => {
         const userId = form.userId.value;
         const fullName = form.fullName.value;
         const username = form.username.value.toUpperCase();
-        // <<< ALTERAÇÃO AQUI: Captura do valor do novo campo >>>
-        const sellerIdErp = form.sellerIdErp.value.toUpperCase() || null; // Garante que seja nulo se vazio
+        const sellerIdErp = form.sellerIdErp.value.toUpperCase() || null;
         const selectedRoles = Array.from(form.querySelectorAll('input[name="roles"]:checked')).map(cb => cb.value);
 
         const newPermissions = {};
@@ -131,7 +133,6 @@ const UsuariosModule = (() => {
         }
 
         try {
-            // <<< ALTERAÇÃO AQUI: Adiciona seller_id_erp ao objeto de dados >>>
             const profileData = { 
                 full_name: fullName, 
                 roles: selectedRoles, 
@@ -144,13 +145,30 @@ const UsuariosModule = (() => {
             } else { 
                 const { data: { session: adminSession } } = await supabase.auth.getSession();
                 if (!adminSession) throw new Error("Sessão de administrador perdida. Por favor, recarregue a página.");
+                
                 const password = form.password.value;
-                const email = `${username.toLowerCase()}@zcm.local`;
-                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email, password });
+                
+                // <<< MUDANÇA CRÍTICA: Lógica para criar o email >>>
+                const manualEmail = form.email.value.trim();
+                let finalEmail;
+
+                if (manualEmail) {
+                    // 1. Usa o email fornecido manualmente se ele existir
+                    finalEmail = manualEmail;
+                } else {
+                    // 2. Se não, gera um email automático substituindo espaços por '_'
+                    const sanitizedUsername = username.toLowerCase().replace(/\s+/g, '_');
+                    finalEmail = `${sanitizedUsername}@zcm.local`;
+                }
+                // <<< FIM DA MUDANÇA CRÍTICA >>>
+
+                const { data: signUpData, error: signUpError } = await supabase.auth.signUp({ email: finalEmail, password });
                 if (signUpError) throw signUpError;
+
                 profileData.username = username;
                 const { error: profileError } = await supabase.from('profiles').update(profileData).eq('id', signUpData.user.id);
                 if (profileError) throw profileError;
+                
                 const { error: sessionError } = await supabase.auth.setSession(adminSession);
                 if (sessionError) throw sessionError;
             }
@@ -159,7 +177,7 @@ const UsuariosModule = (() => {
         } catch (error) {
             console.error('Erro ao salvar usuário:', error.message);
             document.getElementById('modal-error').textContent = error.message;
-            throw error; 
+            // Removido o 'throw error' para não parar a execução e travar o loader caso a função seja chamada de outro lugar
         }
     };
 
