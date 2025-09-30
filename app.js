@@ -1,4 +1,4 @@
-// app.js (VERSÃO COM HOME 100% FUNCIONAL)
+// app.js (VERSÃO COM HOME MELHORADA E FUNCIONAL)
 
 const App = {
     userProfile: null,
@@ -133,13 +133,22 @@ const App = {
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
+
+        // <<< MELHORIA: VERIFICAÇÃO DE PERMISSÃO PARA SOLICITAÇÕES >>>
+        const canViewSolicitacoes = this.userProfile.permissions?.solicitacoes?.view && this.userProfile.permissions.solicitacoes.view !== 'none';
+        const canCreateSolicitacoes = this.userProfile.permissions?.solicitacoes?.create;
+
         return `
             <div class="dashboard-section">
                 <div class="dashboard-grid">
+                    <!-- <<< MELHORIA: CARD DE AVISOS MOVIDO PARA O TOPO >>> -->
+                    <div class="card avisos-card"><h3>Avisos</h3>${avisosHtml}</div>
+
                     <div class="card quick-action-card">
                         <h3>Ações Rápidas</h3>
                         <button class="btn btn-primary home-add-proof">Adicionar Comprovante</button>
-                        <button class="btn btn-secondary" disabled>Nova Solicitação D/C</button>
+                        <!-- <<< MELHORIA: BOTÃO CONDICIONAL >>> -->
+                        ${canCreateSolicitacoes ? '<button id="home-add-solicitacao" class="btn btn-secondary">Nova Solicitação D/C</button>' : ''}
                         <button id="home-show-links" class="btn btn-info">Links Úteis</button>
                     </div>
                     <div class="card search-card">
@@ -149,14 +158,19 @@ const App = {
                             <input type="text" class="home-search-credit-input" id="home-search-credit-input-vendedor" placeholder="Digite o código">
                         </div>
                         <button class="btn btn-secondary home-search-credit-btn">Buscar</button>
-                        <div class="search-result"></div>
+                        <div class="search-result"><p>-- Status do cliente --</p></div>
                     </div>
                     <div id="widget-vendedor-creditos-card" class="card stat-card is-info">
                         <div id="widget-vendedor-creditos-count" class="stat-number">--</div>
                         <div class="stat-label">Clientes com Crédito</div>
                     </div>
-                    <div class="card stat-card is-warning" style="cursor: default;"><div id="widget-vendedor-solicitacoes" class="stat-number">--</div><div class="stat-label">Solicitações Pendentes</div></div>
-                    <div class="card avisos-card"><h3>Avisos</h3>${avisosHtml}</div>
+                    <!-- <<< MELHORIA: CARD CONDICIONAL >>> -->
+                    ${canViewSolicitacoes ? `
+                        <div id="widget-vendedor-solicitacoes-card" class="card stat-card is-warning">
+                            <div id="widget-vendedor-solicitacoes-count" class="stat-number">--</div>
+                            <div class="stat-label">Solicitações Pendentes</div>
+                        </div>
+                    ` : ''}
                 </div>
             </div>`;
     },
@@ -229,25 +243,29 @@ const App = {
             </div>`;
     },
 
-    // <<< FUNÇÃO COMPLETAMENTE REFEITA PARA FUNCIONAR COM CLASSES >>>
     setupHomeEventListeners() {
         const contentArea = document.getElementById('content-area');
         
-        // Ação: Adicionar Comprovante / Novo Pagamento
         contentArea.querySelectorAll('.home-add-proof').forEach(button => {
             button.addEventListener('click', () => {
                 this.modules.comprovantes.renderProofModal();
             });
         });
 
-        // Ação: Adicionar Crédito
         contentArea.querySelectorAll('.home-add-credit').forEach(button => {
             button.addEventListener('click', () => {
                 this.modules.creditos.renderCreditModal();
             });
         });
 
-        // Ação: Buscar Créditos (funciona para todos os painéis)
+        // <<< MELHORIA: EVENTO PARA O NOVO BOTÃO DE SOLICITAÇÃO >>>
+        const addSolicitacaoBtn = contentArea.querySelector('#home-add-solicitacao');
+        if (addSolicitacaoBtn) {
+            addSolicitacaoBtn.addEventListener('click', () => {
+                this.modules.solicitacoes.renderRequestModal();
+            });
+        }
+
         contentArea.querySelectorAll('.home-search-credit-btn').forEach(button => {
             button.addEventListener('click', (e) => {
                 const searchCard = e.target.closest('.search-card');
@@ -261,7 +279,6 @@ const App = {
             });
         });
         
-        // Ação: Mostrar Links Úteis
         const showLinksBtn = contentArea.querySelector('#home-show-links');
         if (showLinksBtn) {
             showLinksBtn.addEventListener('click', async () => {
@@ -276,7 +293,6 @@ const App = {
             });
         }
 
-        // Ação: Clicar nos cards de status (Ex: Pagamentos Faturados)
         contentArea.querySelectorAll('.stat-card[data-status-filter]').forEach(card => {
             card.addEventListener('click', () => {
                 const status = card.dataset.statusFilter;
@@ -284,13 +300,11 @@ const App = {
             });
         });
 
-        // Ação: Gerenciar Widgets (Avisos e Links)
         const manageWidgetsBtn = contentArea.querySelector('#btn-manage-widgets');
         if (manageWidgetsBtn) {
             manageWidgetsBtn.addEventListener('click', () => this.renderManagementModal());
         }
 
-        // Ação: Clicar no card de estatística de créditos do vendedor
         const creditStatCard = contentArea.querySelector('#widget-vendedor-creditos-card');
         if (creditStatCard) {
             creditStatCard.addEventListener('click', () => {
@@ -300,6 +314,14 @@ const App = {
                         status: 'Disponível'
                     });
                 }
+            });
+        }
+
+        // <<< MELHORIA: EVENTO PARA O CARD DE SOLICITAÇÕES PENDENTES >>>
+        const solicitacoesStatCard = contentArea.querySelector('#widget-vendedor-solicitacoes-card');
+        if (solicitacoesStatCard) {
+            solicitacoesStatCard.addEventListener('click', () => {
+                this.navigateToModule('solicitacoes', { status: 'PENDENTE' });
             });
         }
     },
@@ -482,18 +504,22 @@ const App = {
         }
 
         if (this.userProfile.roles.includes('VENDEDOR') && this.userProfile.seller_id_erp) {
+            // Atualiza card de créditos
             const creditCountEl = document.getElementById('widget-vendedor-creditos-count');
             if (creditCountEl) {
                 const { data: creditData, error: creditError } = await supabase.rpc('get_vendedor_credit_stats', {
                     p_seller_id: this.userProfile.seller_id_erp
                 });
+                creditCountEl.textContent = creditError ? 'Erro' : creditData;
+            }
 
-                if (creditError) {
-                    console.error("Erro RPC get_vendedor_credit_stats:", creditError);
-                    creditCountEl.textContent = 'Erro';
-                } else {
-                    creditCountEl.textContent = creditData;
-                }
+            // <<< MELHORIA: ATUALIZA CARD DE SOLICITAÇÕES PENDENTES >>>
+            const solicitacoesCountEl = document.getElementById('widget-vendedor-solicitacoes-count');
+            if (solicitacoesCountEl) {
+                const { data: reqData, error: reqError } = await supabase.rpc('get_vendedor_pending_requests_count', {
+                    p_requester_id: this.userProfile.id
+                });
+                solicitacoesCountEl.textContent = reqError ? 'Erro' : reqData;
             }
         }
     },
@@ -510,6 +536,7 @@ const App = {
             .channel('dashboard-updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'proofs' }, handleDbChange)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'credits' }, handleDbChange)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'dc_requests' }, handleDbChange) // <<< ADICIONADO PARA ATUALIZAR EM TEMPO REAL >>>
             .subscribe((status, err) => {
                 if (status === 'SUBSCRIBED') {
                     console.log('Conectado ao canal de realtime do dashboard!');
