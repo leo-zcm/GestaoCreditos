@@ -1,7 +1,10 @@
-// modules/solicitacoes.js (VERSÃO REATORADA COM MÚLTIPLOS CRÉDITOS)
+// modules/solicitacoes.js (VERSÃO COM TOOLTIPS/MODAIS INFORMATIVOS)
 
 const SolicitacoesModule = (() => {
     let currentFilters = { status: 'PENDENTE' };
+    // Mapas para armazenar nomes e evitar buscas repetidas no DB
+    let clientNamesMap = new Map();
+    let productNamesMap = new Map();
 
     const STATUS_MAP = {
         'PENDENTE': { text: 'Pendente', class: 'status-pending' },
@@ -98,7 +101,7 @@ const SolicitacoesModule = (() => {
             let query = supabase.from('dc_requests').select(`
                 *,
                 requester:profiles!requester_id(full_name, seller_id_erp),
-                credits:dc_request_credits(client_code)
+                credits:dc_request_credits(*)
             `);
 
             if (isOwnView) {
@@ -123,6 +126,24 @@ const SolicitacoesModule = (() => {
                 );
             }
 
+            // <<< MELHORIA: BUSCA OTIMIZADA DE NOMES >>>
+            if (requests.length > 0) {
+                const clientCodes = new Set();
+                const productCodes = new Set();
+                requests.forEach(req => {
+                    clientCodes.add(req.debit_client_code);
+                    req.credits.forEach(c => clientCodes.add(c.client_code));
+                    productCodes.add(req.debit_product_code);
+                });
+
+                const { data: clients } = await supabase.from('clients_erp').select('client_code, client_name').in('client_code', Array.from(clientCodes));
+                const { data: products } = await supabase.from('products_erp').select('product_code, product_name').in('product_code', Array.from(productCodes));
+
+                clientNamesMap = new Map(clients.map(c => [c.client_code, c.client_name]));
+                productNamesMap = new Map(products.map(p => [p.product_code, p.product_name]));
+            }
+            // <<< FIM DA MELHORIA >>>
+
             renderTable(requests);
         } catch (error) {
             console.error("Erro ao carregar solicitações:", error);
@@ -144,14 +165,24 @@ const SolicitacoesModule = (() => {
         listContainer.innerHTML = requests.map(req => {
             const statusInfo = STATUS_MAP[req.status] || { text: req.status, class: '' };
             const showActions = canApprove && req.status === 'PENDENTE';
-            const creditClients = req.credits.map(c => c.client_code).join(', ');
+            
+            let creditCellHtml;
+            if (req.credits.length > 1) {
+                // Armazena os dados completos dos créditos em um atributo JSON para o modal
+                const creditsJson = JSON.stringify(req.credits);
+                creditCellHtml = `<span class="clickable-info" data-action="show-multiple-credits" data-credits-json='${creditsJson}'>Múltiplos</span>`;
+            } else {
+                const clientCode = req.credits[0]?.client_code || 'N/A';
+                creditCellHtml = `<span class="clickable-info" data-action="show-client" data-code="${clientCode}">${clientCode}</span>`;
+            }
+
             return `
                 <tr>
                     <td>${new Date(req.created_at).toLocaleDateString()}</td>
                     <td>${req.requester?.full_name || 'N/A'}</td>
-                    <td>${req.debit_client_code}</td>
-                    <td title="${creditClients}">${req.credits.length > 1 ? 'Múltiplos' : creditClients}</td>
-                    <td>${req.debit_product_code}</td>
+                    <td><span class="clickable-info" data-action="show-client" data-code="${req.debit_client_code}">${req.debit_client_code}</span></td>
+                    <td>${creditCellHtml}</td>
+                    <td><span class="clickable-info" data-action="show-product" data-code="${req.debit_product_code}">${req.debit_product_code}</span></td>
                     <td>${req.debit_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td class="col-actions">
@@ -166,7 +197,38 @@ const SolicitacoesModule = (() => {
             `;
         }).join('');
     };
+
+    const showInfoModal = (action, element) => {
+        const modalBody = document.getElementById('modal-body');
+        let title = '';
+        let content = '';
+
+        if (action === 'show-client') {
+            const code = element.dataset.code;
+            const name = clientNamesMap.get(code) || 'Nome não encontrado no ERP.';
+            title = `Cliente: ${code}`;
+            content = `<p>${name}</p>`;
+        } 
+        else if (action === 'show-product') {
+            const code = element.dataset.code;
+            const name = productNamesMap.get(code) || 'Produto não encontrado no ERP.';
+            title = `Produto: ${code}`;
+            content = `<p>${name}</p>`;
+        } 
+        else if (action === 'show-multiple-credits') {
+            const credits = JSON.parse(element.dataset.creditsJson);
+            title = 'Créditos Distribuídos';
+            content = '<ul>' + credits.map(c => {
+                const name = clientNamesMap.get(c.client_code) || 'Nome não encontrado';
+                return `<li><strong>${c.client_code}</strong> - ${name} (${c.quantity} un.)</li>`;
+            }).join('') + '</ul>';
+        }
+
+        modalBody.innerHTML = `<h2>${title}</h2>${content}`;
+        document.getElementById('modal-container').classList.add('active');
+    };
     
+    // ... (O resto do arquivo, a partir de renderRequestModal, permanece idêntico à versão anterior)
     const renderRequestModal = () => {
         const modalBody = document.getElementById('modal-body');
         modalBody.innerHTML = `
@@ -231,7 +293,6 @@ const SolicitacoesModule = (() => {
             document.getElementById('btn-add-credit').disabled = remainingQty <= 0;
             document.getElementById('btn-submit-request').disabled = remainingQty !== 0 || debitQty === 0 || creditEntries.length === 0;
 
-            // Valida cada campo de quantidade de crédito
             creditEntries.forEach(entry => {
                 const creditQtyInput = entry.querySelector('.credit-quantity');
                 const currentVal = parseInt(creditQtyInput.value) || 0;
@@ -240,7 +301,7 @@ const SolicitacoesModule = (() => {
             });
         };
         
-        addCreditEntry(); // Adiciona a primeira linha de crédito
+        addCreditEntry();
         form.addEventListener('input', updateCalculationsAndValidation);
         document.getElementById('btn-add-credit').addEventListener('click', addCreditEntry);
         creditContainer.addEventListener('click', (e) => {
@@ -291,7 +352,6 @@ const SolicitacoesModule = (() => {
         } catch (error) {
             console.error("Erro ao criar solicitação:", error);
             document.getElementById('modal-error').textContent = `Erro: ${error.message}`;
-            // TODO: Adicionar lógica para deletar a 'dc_request' se a inserção dos créditos falhar
         } finally {
             App.hideLoader();
         }
@@ -440,11 +500,20 @@ const SolicitacoesModule = (() => {
 
         document.getElementById('requests-list').addEventListener('click', (e) => {
             const button = e.target.closest('button[data-action]');
-            if (!button) return;
-            const action = button.dataset.action;
-            const id = button.dataset.id;
-            if (action === 'approve') renderApprovalModal(id);
-            if (action === 'reject') renderRejectionModal(id);
+            if (button) {
+                const action = button.dataset.action;
+                const id = button.dataset.id;
+                if (action === 'approve') renderApprovalModal(id);
+                if (action === 'reject') renderRejectionModal(id);
+                return; // Impede que o clique no botão propague para o span
+            }
+
+            // <<< MELHORIA: EVENTO PARA OS ITENS CLICÁVEIS >>>
+            const infoSpan = e.target.closest('.clickable-info');
+            if (infoSpan) {
+                const action = infoSpan.dataset.action;
+                showInfoModal(action, infoSpan);
+            }
         });
     };
 
