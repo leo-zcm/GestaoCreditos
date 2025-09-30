@@ -555,6 +555,7 @@ const CreditosModule = (() => {
 
     return {
         name: 'Créditos',
-        render
+        render,
+        renderCreditModal
     };
 })();
