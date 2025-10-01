@@ -22,6 +22,7 @@ const ComprovantesModule = (() => {
             .replace(/[^a-z0-9._-]/g, '');
     };
 
+
     const loadProofs = async (initialFilters = null) => {
         if (initialFilters && initialFilters.status) {
             currentFilters.status = initialFilters.status;
@@ -31,7 +32,6 @@ const ComprovantesModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
-        // ALTERAÇÃO 1: Aumentar o colspan para 9 por causa da nova coluna
         listContainer.innerHTML = '<tr><td colspan="9">Buscando...</td></tr>';
         try {
             const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
@@ -46,18 +46,16 @@ const ComprovantesModule = (() => {
             }
             const proofIds = idObjects.map(item => item.id);
 
-            // ALTERAÇÃO 2: Adicionar 'account_note' à lista de colunas selecionadas
+            // ALTERAÇÃO: A linha .order() foi removida daqui
             const { data: proofs, error: selectError } = await supabase
                 .from('proofs')
                 .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, account_note, clients_erp(client_name), payment_types(name, color)`)
                 .in('id', proofIds)
-                .order('created_at', { ascending: false });
 
             if (selectError) throw selectError;
             renderTable(proofs);
         } catch (error) {
             console.error("Erro ao carregar comprovantes:", error);
-            // ALTERAÇÃO 3: Aumentar o colspan do erro para 9
             listContainer.innerHTML = `<tr><td colspan="9" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
         } finally {
             App.hideLoader();
