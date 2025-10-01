@@ -161,7 +161,7 @@ const CreditosModule = (() => {
         
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-
+    
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-n-registro').value = currentFilters.n_registro || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
@@ -174,36 +174,36 @@ const CreditosModule = (() => {
             const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
             let query = supabase.from('credits').select(selectStatement);
     
+            // --- Filtros de permissão e vendedor ---
             if (isOwnView) {
                 query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
-            } else {
-                if (currentFilters.seller_id) {
-                    query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
-                }
+            } else if (currentFilters.seller_id) {
+                query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
             }
-
+    
+            // --- Outros filtros ---
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.n_registro) {
-                query = query.eq('n_registro', currentFilters.n_registro);
-            }
-            if (currentFilters.client_code) {
-                query = query.eq('client_code', currentFilters.client_code.toUpperCase());
-            }
+            if (currentFilters.n_registro) query = query.eq('n_registro', currentFilters.n_registro);
+            if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code.toUpperCase());
             
+            // CORREÇÃO 1: Filtro de nome do cliente movido para a consulta do banco de dados
+            if (currentFilters.client_name) {
+                // Usamos 'ilike' para busca case-insensitive na tabela relacionada
+                query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
+            }
+    
             const dateColumn = currentFilters.date_type || 'created_at';
             if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
     
+            // CORREÇÃO 2: Ordenação por nome do cliente (A-Z) e, como desempate, data de criação
             let { data: credits, error } = await query
                 .order('client_name', { foreignTable: 'clients_erp', ascending: true })
                 .order('created_at', { ascending: false });
+            
             if (error) throw error;
     
-            if (currentFilters.client_name) {
-                credits = credits.filter(c => 
-                    c.clients_erp?.client_name && c.clients_erp.client_name.toLowerCase().includes(currentFilters.client_name.toLowerCase())
-                );
-            }
+            // O filtro de nome do cliente que estava aqui foi REMOVIDO.
     
             renderTable(credits);
     
