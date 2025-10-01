@@ -72,7 +72,8 @@ const CreditosModule = (() => {
                 </div>
             </div>
         `;
-    
+
+
         const styleId = 'creditos-module-style';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
@@ -92,14 +93,60 @@ const CreditosModule = (() => {
                 .credit-details-summary li { font-size: 0.9em; padding: 4px 0; border-bottom: 1px solid #e9ecef; }
                 .credit-details-summary li:last-child { border-bottom: none; }
 
-                @media (max-width: 992px) {
-                    #credits-table thead { display: none; }
-                    #credits-table, #credits-table tbody, #credits-table tr, #credits-table td { display: block; width: 100%; }
-                    #credits-table tr { margin-bottom: 1rem; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.5rem; }
-                    #credits-table td { text-align: right; position: relative; padding-left: 50%; white-space: normal; overflow: visible; text-overflow: clip; border-bottom: 1px solid var(--light-color); }
-                    #credits-table td:last-child { border-bottom: none; }
-                    #credits-table td::before { content: attr(data-label); position: absolute; left: 0.5rem; width: 45%; padding-right: 1rem; font-weight: bold; text-align: left; }
-                    #credits-table td.col-actions .action-buttons { justify-content: flex-end; }
+                /* === REGRAS DE RESPONSIVIDADE CORRIGIDAS === */
+                @media (max-width: 1300px) { /* <-- MUDANÇA 1: Breakpoint aumentado para 1300px */
+                    
+                    /* MUDANÇA 2: Corrige o "Selecionar Tudo" */
+                    #credits-table thead, #credits-table thead tr { 
+                        display: block; /* Garante que o cabeçalho seja visível */
+                    }
+                    #credits-table thead th:not(:first-child) {
+                        display: none; /* Esconde todos os títulos, MENOS o primeiro (do checkbox) */
+                    }
+                    #credits-table thead th {
+                        border-bottom: none; /* Remove a linha inferior do cabeçalho */
+                        padding: 0.5rem;
+                    }
+
+                    /* Regras gerais para transformar a tabela em cards */
+                    #credits-table, #credits-table tbody, #credits-table tr, #credits-table td { 
+                        display: block; 
+                        width: 100%; 
+                    }
+                    #credits-table tr { 
+                        margin-bottom: 1rem; 
+                        border: 1px solid var(--border-color); 
+                        border-radius: 8px; 
+                        padding: 0.5rem; 
+                    }
+
+                    /* MUDANÇA 3: Reduz o espaçamento interno dos cards */
+                    #credits-table td { 
+                        text-align: right; 
+                        position: relative; 
+                        padding-left: 50%; 
+                        white-space: normal; 
+                        overflow: visible; 
+                        text-overflow: clip; 
+                        border-bottom: 1px solid var(--light-color);
+                        padding-top: 0.4rem;    /* Espaçamento vertical reduzido */
+                        padding-bottom: 0.4rem; /* Espaçamento vertical reduzido */
+                    }
+                    #credits-table td:last-child { 
+                        border-bottom: none; 
+                    }
+                    #credits-table td::before { 
+                        content: attr(data-label); 
+                        position: absolute; 
+                        left: 0.5rem; 
+                        width: 45%; 
+                        padding-right: 1rem; 
+                        font-weight: bold; 
+                        text-align: left; 
+                    }
+                    #credits-table td.col-actions .action-buttons { 
+                        justify-content: flex-end; 
+                    }
                 }
             `;
             document.head.appendChild(style);
