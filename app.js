@@ -557,20 +557,20 @@ const App = {
     },
 
 
+
     setupEventListeners() {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
-        // <<< MUDANÇA CRÍTICA: Pega a referência do novo overlay >>>
         const sidebarOverlay = document.getElementById('sidebar-overlay');
 
-        // Ação de abrir/fechar no botão de menu
+        // Ação de abrir/fechar no botão de menu (agora funciona em todas as telas)
         menuToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('active');
+            sidebar.classList.toggle('is-collapsed');
         });
 
-        // <<< MUDANÇA CRÍTICA: Ação de fechar ao clicar no overlay >>>
+        // Ação de fechar ao clicar no overlay (apenas para mobile)
         sidebarOverlay.addEventListener('click', () => {
-            sidebar.classList.remove('active');
+            sidebar.classList.add('is-collapsed');
         });
 
         // Ação de fechar ao clicar em um link do menu
@@ -578,8 +578,8 @@ const App = {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
                 
-                // Fecha a sidebar (importante para mobile)
-                sidebar.classList.remove('active');
+                // Recolhe a sidebar (funciona em mobile e desktop)
+                sidebar.classList.add('is-collapsed');
 
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
