@@ -556,30 +556,37 @@ const App = {
         }
     },
 
-
-
     setupEventListeners() {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
 
-        // Ação de abrir/fechar no botão de menu (agora funciona em todas as telas)
         menuToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('is-collapsed');
+            // Verifica a largura da janela para decidir qual classe usar
+            if (window.innerWidth > 768) {
+                // Comportamento para Desktop: alterna a classe 'collapsed'
+                sidebar.classList.toggle('collapsed');
+            } else {
+                // Comportamento para Mobile: alterna a classe 'active'
+                sidebar.classList.toggle('active');
+            }
         });
 
-        // Ação de fechar ao clicar no overlay (apenas para mobile)
+        // Ação de fechar ao clicar no overlay (só afeta o mobile)
         sidebarOverlay.addEventListener('click', () => {
-            sidebar.classList.add('is-collapsed');
+            sidebar.classList.remove('active');
         });
 
-        // Ação de fechar ao clicar em um link do menu
+        // Ação de fechar/recolher ao clicar em um link do menu
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
                 
-                // Recolhe a sidebar (funciona em mobile e desktop)
-                sidebar.classList.add('is-collapsed');
+                // Em telas pequenas (mobile), fecha o menu
+                if (window.innerWidth <= 768) {
+                    sidebar.classList.remove('active');
+                }
+                // Não é necessário recolher no desktop, pois o usuário já vê o conteúdo
 
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
