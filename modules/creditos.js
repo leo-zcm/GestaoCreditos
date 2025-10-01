@@ -194,7 +194,9 @@ const CreditosModule = (() => {
             if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
             if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
     
-            let { data: credits, error } = await query.order('created_at', { ascending: false });
+            let { data: credits, error } = await query
+                .order('client_name', { foreignTable: 'clients_erp', ascending: true })
+                .order('created_at', { ascending: false });
             if (error) throw error;
     
             if (currentFilters.client_name) {
