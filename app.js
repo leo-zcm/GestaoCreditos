@@ -1,4 +1,4 @@
-// app.js (VERSÃO BLINDADA CONTRA LOADING INFINITO)
+// app.js (VERSÃO BLINDADA CONTRA LOADING INFINITO E COM PAINEL DO CAIXA ATUALIZADO)
 
 const App = {
     userProfile: null,
@@ -59,7 +59,6 @@ const App = {
     async loadModule(moduleName, initialFilters = null) {
         this.unsubscribeFromDashboardChanges();
         this.showLoader();
-        // <<< MUDANÇA CRÍTICA: BLINDAGEM ANTI-LOADING >>>
         try {
             const module = this.modules[moduleName];
             const moduleConf = this.moduleConfig.find(m => m.key === moduleName);
@@ -74,7 +73,6 @@ const App = {
             console.error(`Erro ao renderizar o módulo ${moduleName}:`, error);
             document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro grave ao carregar este módulo.</div>`;
         } finally {
-            // Esta linha garante que o loader SEMPRE será escondido, com ou sem erro.
             this.hideLoader();
         }
     },
@@ -91,7 +89,6 @@ const App = {
     async renderHome() {
         this.showLoader();
         document.getElementById('header-title').textContent = 'Início';
-        // <<< MUDANÇA CRÍTICA: BLINDAGEM ANTI-LOADING >>>
         try {
             const contentArea = document.getElementById('content-area');
             const userRoles = this.userProfile.roles || [];
@@ -135,7 +132,6 @@ const App = {
             console.error("Erro grave ao renderizar a Home:", error);
             document.getElementById('content-area').innerHTML = `<div class="card error-message">Ocorreu um erro ao carregar o painel inicial. Tente novamente mais tarde.</div>`;
         } finally {
-            // Esta linha garante que o loader SEMPRE será escondido, com ou sem erro.
             this.hideLoader();
         }
     },
@@ -180,11 +176,15 @@ const App = {
             </div>`;
     },
 
+    // <<< FUNÇÃO ATUALIZADA >>>
     _renderCaixaDashboard() {
+        // Verifica se o usuário tem permissão para ver o módulo de solicitações
+        const canViewSolicitacoes = this.userProfile.permissions?.solicitacoes?.view && this.userProfile.permissions.solicitacoes.view !== 'none';
+
         return `
             <div class="dashboard-section">
                 <h3>Painel do Caixa</h3>
-                <div class="dashboard-grid">
+                <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
                     <div class="card quick-action-card">
                          <button class="btn btn-primary home-add-proof">Inserir Novo Pagamento</button>
                     </div>
@@ -192,6 +192,12 @@ const App = {
                         <div id="widget-faturado-count" class="stat-number">...</div>
                         <div class="stat-label">Pagamentos Prontos para Baixa</div>
                     </div>
+                    ${canViewSolicitacoes ? `
+                    <div id="widget-caixa-solicitacoes-card" class="card stat-card is-warning">
+                        <div id="widget-caixa-solicitacoes-count" class="stat-number">--</div>
+                        <div class="stat-label">Solicitações D/C Pendentes</div>
+                    </div>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -324,6 +330,14 @@ const App = {
         const solicitacoesStatCard = contentArea.querySelector('#widget-vendedor-solicitacoes-card');
         if (solicitacoesStatCard) {
             solicitacoesStatCard.addEventListener('click', () => {
+                this.navigateToModule('solicitacoes', { status: 'PENDENTE' });
+            });
+        }
+
+        // <<< LISTENER ADICIONADO PARA O NOVO CARD DO CAIXA >>>
+        const solicitacoesCaixaCard = contentArea.querySelector('#widget-caixa-solicitacoes-card');
+        if (solicitacoesCaixaCard) {
+            solicitacoesCaixaCard.addEventListener('click', () => {
                 this.navigateToModule('solicitacoes', { status: 'PENDENTE' });
             });
         }
@@ -493,6 +507,7 @@ const App = {
         this.hideLoader();
     },
 
+    // <<< FUNÇÃO ATUALIZADA >>>
     async updateDashboardStats() {
         const { data, error } = await supabase.rpc('get_dashboard_stats');
         if (error) {
@@ -521,6 +536,15 @@ const App = {
                     p_requester_id: this.userProfile.id
                 });
                 solicitacoesCountEl.textContent = reqError ? 'Erro' : reqData;
+            }
+        }
+
+        // <<< LÓGICA ADICIONADA PARA BUSCAR STATS DO NOVO CARD DO CAIXA >>>
+        if (this.userProfile.roles.includes('CAIXA')) {
+            const solicitacoesCaixaCountEl = document.getElementById('widget-caixa-solicitacoes-count');
+            if (solicitacoesCaixaCountEl) {
+                const { data, error } = await supabase.rpc('get_all_pending_requests_count');
+                solicitacoesCaixaCountEl.textContent = error ? 'Erro' : data;
             }
         }
     },
@@ -562,31 +586,24 @@ const App = {
         const sidebarOverlay = document.getElementById('sidebar-overlay');
 
         menuToggle.addEventListener('click', () => {
-            // Verifica a largura da janela para decidir qual classe usar
             if (window.innerWidth > 768) {
-                // Comportamento para Desktop: alterna a classe 'collapsed'
                 sidebar.classList.toggle('collapsed');
             } else {
-                // Comportamento para Mobile: alterna a classe 'active'
                 sidebar.classList.toggle('active');
             }
         });
 
-        // Ação de fechar ao clicar no overlay (só afeta o mobile)
         sidebarOverlay.addEventListener('click', () => {
             sidebar.classList.remove('active');
         });
 
-        // Ação de fechar/recolher ao clicar em um link do menu
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
                 
-                // Em telas pequenas (mobile), fecha o menu
                 if (window.innerWidth <= 768) {
                     sidebar.classList.remove('active');
                 }
-                // Não é necessário recolher no desktop, pois o usuário já vê o conteúdo
 
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
