@@ -36,7 +36,7 @@ const ComprovantesModule = (() => {
         try {
             const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
                 p_status: currentFilters.status,
-                p_client_code: currentFilters.client_code,
+                param_client_code: currentFilters.client_code,
                 p_name_search: currentFilters.client_name
             });
             if (rpcError) throw rpcError;
