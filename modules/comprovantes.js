@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO COM SANITIZAÇÃO DE NOMES DE ARQUIVO)
+// modules/comprovantes.js (VERSÃO COMPLETA E ATUALIZADA)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -11,16 +11,11 @@ const ComprovantesModule = (() => {
 
     let currentFilters = { client_code: '', client_name: '', status: 'CONFIRMADO' };
     let filesToUpload = [];
+    let urlsToDelete = [];
     let documentPasteHandler = null;
 
-    // <<< MUDANÇA CRÍTICA: Nova função para limpar nomes de arquivo >>>
     const sanitizeFilename = (filename) => {
-        // Decompõe caracteres acentuados em caracteres base + diacríticos (ex: 'à' -> 'a' + '`')
-        // e depois remove os diacríticos.
         const normalized = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        
-        // Converte para minúsculas, substitui espaços por underscores,
-        // e remove qualquer caractere que NÃO seja letra, número, ponto, underscore ou hífen.
         return normalized
             .toLowerCase()
             .replace(/\s+/g, '_')
@@ -132,6 +127,7 @@ const ComprovantesModule = (() => {
 
     const renderProofModal = async (proof = null) => {
         filesToUpload = [];
+        urlsToDelete = [];
         cleanupModalListeners();
         App.showLoader();
         try {
@@ -150,8 +146,11 @@ const ComprovantesModule = (() => {
 
             let existingProofsHtml = '';
             if (proof?.proof_urls && proof.proof_urls.length > 0) {
-                existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul>' + proof.proof_urls.map((url, index) => 
-                    `<li><a href="${url}" target="_blank">Comprovante ${index + 1}</a></li>`
+                existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul id="existing-proofs-list">' + proof.proof_urls.map((url, index) => 
+                    `<li data-url="${url}">
+                        <a href="${url}" target="_blank">Comprovante ${index + 1}</a>
+                        <button type="button" class="btn-delete-proof" data-url="${url}" title="Excluir este comprovante">×</button>
+                    </li>`
                 ).join('') + '</ul>';
             }
 
@@ -194,6 +193,19 @@ const ComprovantesModule = (() => {
                     <button type="submit" class="btn btn-primary">${isNew ? 'Salvar Pagamento' : 'Salvar Alterações'}</button>
                 </form>
             `;
+            
+            document.getElementById('modal-body').addEventListener('click', (e) => {
+                if (e.target.classList.contains('btn-delete-proof')) {
+                    const urlToDelete = e.target.dataset.url;
+                    if (urlToDelete && !urlsToDelete.includes(urlToDelete)) {
+                        urlsToDelete.push(urlToDelete);
+                    }
+                    const listItem = e.target.closest('li');
+                    listItem.style.textDecoration = 'line-through';
+                    e.target.disabled = true;
+                }
+            });
+
             const clientCodeInput = document.getElementById('clientCode');
             const clientNameInput = document.getElementById('clientName');
 
@@ -275,8 +287,17 @@ const ComprovantesModule = (() => {
     };
     
     const handleFileSelect = (selectedFiles) => {
-        if (selectedFiles.length > 0) {
-            filesToUpload.push(...Array.from(selectedFiles));
+        const newFiles = Array.from(selectedFiles);
+        let addedCount = 0;
+        for (const file of newFiles) {
+            if (filesToUpload.some(existingFile => existingFile.name === file.name)) {
+                alert(`O arquivo "${file.name}" já foi adicionado.`);
+                continue;
+            }
+            filesToUpload.push(file);
+            addedCount++;
+        }
+        if (addedCount > 0) {
             renderPreview();
         }
     };
@@ -288,8 +309,18 @@ const ComprovantesModule = (() => {
             const imageFiles = Array.from(pastedFiles).filter(file => file.type.startsWith('image/'));
             if (imageFiles.length > 0) {
                 e.preventDefault();
-                filesToUpload.push(...imageFiles);
-                renderPreview();
+                let addedCount = 0;
+                for (const file of imageFiles) {
+                    if (filesToUpload.some(existingFile => existingFile.name === file.name)) {
+                        alert(`O arquivo "${file.name}" já foi adicionado.`);
+                        continue;
+                    }
+                    filesToUpload.push(file);
+                    addedCount++;
+                }
+                if (addedCount > 0) {
+                    renderPreview();
+                }
             }
         }
     };
@@ -331,16 +362,27 @@ const ComprovantesModule = (() => {
             const proofId = form.proofId.value;
             const isNew = !proofId;
             
+            if (!isNew && urlsToDelete.length > 0) {
+                const pathsToDelete = urlsToDelete.map(url => {
+                    const parts = url.split('/comprovantes/');
+                    return parts.length > 1 ? parts[1] : null;
+                }).filter(Boolean);
+
+                if (pathsToDelete.length > 0) {
+                    const { error: removeError } = await supabase.storage.from('comprovantes').remove(pathsToDelete);
+                    if (removeError) {
+                        console.warn("Erro ao remover arquivos do storage (pode já ter sido removido):", removeError);
+                    }
+                }
+            }
+            
             let uploadedUrls = [];
             if (filesToUpload.length > 0) {
                 for (const file of filesToUpload) {
-                    // <<< MUDANÇA CRÍTICA: Sanitiza o nome do arquivo antes de criar o caminho >>>
                     const sanitizedName = sanitizeFilename(file.name);
                     const filePath = `${App.userProfile.id}/${Date.now()}-${sanitizedName}`;
-                    
                     const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, file);
                     if (uploadError) throw new Error(`Falha no upload do arquivo ${file.name}: ${uploadError.message}`);
-                    
                     const { data: urlData } = supabase.storage.from('comprovantes').getPublicUrl(filePath);
                     uploadedUrls.push(urlData.publicUrl);
                 }
@@ -350,7 +392,7 @@ const ComprovantesModule = (() => {
             if (!isNew) {
                 const { data: existingProof, error } = await supabase.from('proofs').select('proof_urls').eq('id', proofId).single();
                 if (error) throw error;
-                finalProofUrls = existingProof.proof_urls || [];
+                finalProofUrls = (existingProof.proof_urls || []).filter(url => !urlsToDelete.includes(url));
             }
             finalProofUrls.push(...uploadedUrls);
 
@@ -385,8 +427,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // O restante do código permanece o mesmo...
-    // ...
     const renderGenerateCreditModal = async (proofId) => {
         App.showLoader();
         try {
@@ -584,18 +624,11 @@ const ComprovantesModule = (() => {
             const style = document.createElement('style');
             style.id = styleId;
             style.innerHTML = `
-                .proof-links-list {
-                    list-style: none;
-                    padding: 0;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
-                }
-                .proof-links-list a {
-                    display: block;
-                    text-align: center;
-                    padding: 10px;
-                }
+                .proof-links-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+                .proof-links-list a { display: block; text-align: center; padding: 10px; }
+                #existing-proofs-list { list-style-type: none; padding-left: 0; }
+                #existing-proofs-list li { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; border-radius: 4px; background-color: #f8f9fa; }
+                .btn-delete-proof { background: transparent; border: none; color: red; font-size: 1.5rem; cursor: pointer; padding: 0 5px; line-height: 1; }
             `;
             document.head.appendChild(style);
         }
