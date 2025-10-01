@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM FILTRO POR Nº DE REGISTRO)
+// modules/creditos.js (VERSÃO COM DETALHES NO MODAL DE ABATIMENTO)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -38,7 +38,6 @@ const CreditosModule = (() => {
                 </div>
                 <div class="filters">
                     <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
-                    <!-- <<< MUDANÇA CRÍTICA: Adicionado o novo campo de filtro >>> -->
                     <input type="text" id="filter-n-registro" placeholder="Nº Registro">
                     <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
                     <select id="filter-status">
@@ -84,6 +83,7 @@ const CreditosModule = (() => {
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
             style.id = styleId;
+            // <<< MUDANÇA CRÍTICA: Adicionado estilo para a lista de detalhes no modal >>>
             style.innerHTML = `
                 #credits-table { font-size: 0.9rem; table-layout: fixed; width: 100%; }
                 #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
@@ -93,6 +93,11 @@ const CreditosModule = (() => {
                 .col-actions { width: 180px; text-align: right; }
                 .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
                 .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
+                .credit-details-summary { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 1rem; margin-bottom: 1rem; }
+                .credit-details-summary h4 { margin-top: 0; margin-bottom: 0.5rem; font-size: 1rem; }
+                .credit-details-summary ul { list-style-type: none; padding-left: 0; margin: 0; }
+                .credit-details-summary li { font-size: 0.9em; padding: 4px 0; border-bottom: 1px solid #e9ecef; }
+                .credit-details-summary li:last-child { border-bottom: none; }
 
                 @media (max-width: 992px) {
                     #credits-table thead { display: none; }
@@ -158,10 +163,9 @@ const CreditosModule = (() => {
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
 
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
+        document.getElementById('filter-n-registro').value = currentFilters.n_registro || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
         document.getElementById('filter-status').value = currentFilters.status || 'Disponível';
-        // <<< MUDANÇA CRÍTICA: Atualiza o valor do novo campo na UI (opcional, mas bom para consistência) >>>
-        document.getElementById('filter-n-registro').value = currentFilters.n_registro || '';
         
         const listContainer = document.getElementById('credits-list');
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
@@ -179,12 +183,9 @@ const CreditosModule = (() => {
             }
 
             if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            
-            // <<< MUDANÇA CRÍTICA: Adiciona a condição de filtro para o Nº de Registro >>>
             if (currentFilters.n_registro) {
                 query = query.eq('n_registro', currentFilters.n_registro);
             }
-
             if (currentFilters.client_code) {
                 query = query.eq('client_code', currentFilters.client_code.toUpperCase());
             }
@@ -388,39 +389,73 @@ const CreditosModule = (() => {
         }
     };
 
+    // <<< MUDANÇA CRÍTICA: Função `renderAbateModal` totalmente refatorada >>>
     const renderAbateModal = async (creditIds) => {
-        const isMulti = creditIds.length > 1;
-        let totalValue = 0;
-        let title = 'Abater Crédito';
-        if (isMulti) {
-            title = `Abater ${creditIds.length} Créditos`;
-            creditIds.forEach(id => totalValue += selectedCredits.get(id).value);
-        } else {
-            const { data: credit } = await supabase.from('credits').select('value').eq('id', creditIds[0]).single();
-            totalValue = credit.value;
-        }
+        App.showLoader();
         const modalBody = document.getElementById('modal-body');
-        modalBody.innerHTML = `
-            <h2>${title}</h2>
-            <form id="abate-form">
-                <p>Valor total: <strong>${totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
-                <div class="form-group">
-                    <label for="abatementOrder">Pedido ou Lançamento</label>
-                    <input type="text" id="abatementOrder" required>
+        
+        try {
+            // 1. Busca os detalhes completos dos créditos de uma só vez
+            const { data: credits, error } = await supabase
+                .from('credits')
+                .select('value, n_registro, notes')
+                .in('id', creditIds);
+
+            if (error) throw error;
+            if (!credits || credits.length === 0) throw new Error("Créditos selecionados não foram encontrados.");
+
+            // 2. Calcula o valor total
+            const totalValue = credits.reduce((sum, credit) => sum + credit.value, 0);
+
+            // 3. Gera o HTML com os detalhes dos créditos
+            const creditsDetailsHtml = `
+                <div class="credit-details-summary">
+                    <h4>Créditos a serem abatidos:</h4>
+                    <ul>
+                        ${credits.map(credit => `
+                            <li>
+                                <strong>Reg.:</strong> ${credit.n_registro || 'N/A'}
+                                ${credit.notes ? `| <strong>Obs.:</strong> ${credit.notes}` : ''}
+                            </li>
+                        `).join('')}
+                    </ul>
                 </div>
-                <div class="form-group">
-                    <label for="abateValue">Valor a Abater</label>
-                    <input type="number" id="abateValue" step="0.01" value="${totalValue.toFixed(2)}" max="${totalValue.toFixed(2)}" required>
-                </div>
-                <p id="modal-error" class="error-message"></p>
-                <button type="submit" class="btn btn-primary">Confirmar Abatimento</button>
-            </form>
-        `;
-        document.getElementById('abate-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            handleAbateSubmit(creditIds, totalValue);
-        });
-        document.getElementById('modal-container').classList.add('active');
+            `;
+
+            const isMulti = creditIds.length > 1;
+            const title = isMulti ? `Abater ${creditIds.length} Créditos` : 'Abater Crédito';
+            
+            // 4. Monta o modal completo com os novos detalhes
+            modalBody.innerHTML = `
+                <h2>${title}</h2>
+                <form id="abate-form">
+                    ${creditsDetailsHtml}
+                    <p>Valor total: <strong>${totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong></p>
+                    <div class="form-group">
+                        <label for="abatementOrder">Pedido ou Lançamento</label>
+                        <input type="text" id="abatementOrder" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="abateValue">Valor a Abater</label>
+                        <input type="number" id="abateValue" step="0.01" value="${totalValue.toFixed(2)}" max="${totalValue.toFixed(2)}" required>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <button type="submit" class="btn btn-primary">Confirmar Abatimento</button>
+                </form>
+            `;
+
+            document.getElementById('abate-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleAbateSubmit(creditIds, totalValue);
+            });
+            
+        } catch (err) {
+            console.error("Erro ao preparar modal de abatimento:", err);
+            modalBody.innerHTML = `<p class="error-message">Falha ao carregar detalhes dos créditos. Tente novamente.</p>`;
+        } finally {
+            App.hideLoader();
+            document.getElementById('modal-container').classList.add('active');
+        }
     };
 
     const handleAbateSubmit = async (creditIds, originalTotalValue) => {
@@ -499,7 +534,6 @@ const CreditosModule = (() => {
         document.getElementById('btn-new-credit').addEventListener('click', () => renderCreditModal());
         document.getElementById('btn-apply-filters').addEventListener('click', () => {
             currentFilters.client_code = document.getElementById('filter-client-code').value;
-            // <<< MUDANÇA CRÍTICA: Captura o valor do novo campo de filtro >>>
             currentFilters.n_registro = document.getElementById('filter-n-registro').value.trim();
             currentFilters.client_name = document.getElementById('filter-client-name').value;
             currentFilters.status = document.getElementById('filter-status').value;
