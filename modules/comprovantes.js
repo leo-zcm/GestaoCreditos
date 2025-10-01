@@ -198,7 +198,7 @@ const ComprovantesModule = (() => {
                         </div>
                     </div>
                     <div class="form-group">
-                        <label for="accountNote">Conta Creditada (se não houver comprovante)</label>
+                        <label for="accountNote">Observações</label>
                         <textarea id="accountNote" rows="2">${proof?.account_note || ''}</textarea>
                     </div>
                     <p id="modal-error" class="error-message"></p>
