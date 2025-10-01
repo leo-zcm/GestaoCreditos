@@ -1,4 +1,4 @@
-// modules/comprovantes.js (VERSÃO COM MODAL PARA MÚLTIPLOS ANEXOS)
+// modules/comprovantes.js (VERSÃO COM SANITIZAÇÃO DE NOMES DE ARQUIVO)
 
 const ComprovantesModule = (() => {
     const STATUS_MAP = {
@@ -12,6 +12,20 @@ const ComprovantesModule = (() => {
     let currentFilters = { client_code: '', client_name: '', status: 'CONFIRMADO' };
     let filesToUpload = [];
     let documentPasteHandler = null;
+
+    // <<< MUDANÇA CRÍTICA: Nova função para limpar nomes de arquivo >>>
+    const sanitizeFilename = (filename) => {
+        // Decompõe caracteres acentuados em caracteres base + diacríticos (ex: 'à' -> 'a' + '`')
+        // e depois remove os diacríticos.
+        const normalized = filename.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        
+        // Converte para minúsculas, substitui espaços por underscores,
+        // e remove qualquer caractere que NÃO seja letra, número, ponto, underscore ou hífen.
+        return normalized
+            .toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9._-]/g, '');
+    };
 
     const loadProofs = async (initialFilters = null) => {
         if (initialFilters && initialFilters.status) {
@@ -214,7 +228,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // <<< MUDANÇA CRÍTICA >>> Nova função para renderizar o modal com os links
     const renderViewProofsModal = (urls) => {
         const modalBody = document.getElementById('modal-body');
         const linksHtml = urls.map((url, index) => `
@@ -240,7 +253,6 @@ const ComprovantesModule = (() => {
         const action = button.dataset.action;
         const id = button.dataset.id;
 
-        // <<< MUDANÇA CRÍTICA >>> Ação "view-all" agora chama o novo modal
         if (action === 'view-all') {
             const urls = JSON.parse(button.dataset.urls);
             renderViewProofsModal(urls);
@@ -322,9 +334,13 @@ const ComprovantesModule = (() => {
             let uploadedUrls = [];
             if (filesToUpload.length > 0) {
                 for (const file of filesToUpload) {
-                    const filePath = `${App.userProfile.id}/${Date.now()}-${file.name}`;
+                    // <<< MUDANÇA CRÍTICA: Sanitiza o nome do arquivo antes de criar o caminho >>>
+                    const sanitizedName = sanitizeFilename(file.name);
+                    const filePath = `${App.userProfile.id}/${Date.now()}-${sanitizedName}`;
+                    
                     const { error: uploadError } = await supabase.storage.from('comprovantes').upload(filePath, file);
                     if (uploadError) throw new Error(`Falha no upload do arquivo ${file.name}: ${uploadError.message}`);
+                    
                     const { data: urlData } = supabase.storage.from('comprovantes').getPublicUrl(filePath);
                     uploadedUrls.push(urlData.publicUrl);
                 }
@@ -369,7 +385,7 @@ const ComprovantesModule = (() => {
         }
     };
 
-    // O restante do código (renderFaturarModal, etc.) permanece o mesmo...
+    // O restante do código permanece o mesmo...
     // ...
     const renderGenerateCreditModal = async (proofId) => {
         App.showLoader();
@@ -563,7 +579,6 @@ const ComprovantesModule = (() => {
                 </div>
             </div>
         `;
-        // <<< MUDANÇA CRÍTICA >>> Adicionando um estilo para a lista de links no modal
         const styleId = 'comprovantes-module-style';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
