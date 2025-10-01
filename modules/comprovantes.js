@@ -22,7 +22,7 @@ const ComprovantesModule = (() => {
             .replace(/[^a-z0-9._-]/g, '');
     };
 
-
+    // FUNÇÃO ATUALIZADA E OTIMIZADA
     const loadProofs = async (initialFilters = null) => {
         if (initialFilters && initialFilters.status) {
             currentFilters.status = initialFilters.status;
@@ -33,39 +33,48 @@ const ComprovantesModule = (() => {
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
         listContainer.innerHTML = '<tr><td colspan="9">Buscando...</td></tr>';
+
         try {
-            const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
+            // CHAMADA ÚNICA E EFICIENTE PARA A NOVA FUNÇÃO RPC
+            const { data: proofs, error } = await supabase.rpc('filter_and_get_proofs', {
                 p_status: currentFilters.status,
                 param_client_code: currentFilters.client_code,
                 p_name_search: currentFilters.client_name
             });
-            if (rpcError) throw rpcError;
-            if (!idObjects || idObjects.length === 0) {
-                renderTable([]);
-                return;
-            }
-            const proofIds = idObjects.map(item => item.id);
 
-            // ALTERAÇÃO: A linha .order() foi removida daqui
-            const { data: proofs, error: selectError } = await supabase
-                .from('proofs')
-                .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, account_note, clients_erp(client_name), payment_types(name, color)`)
-                .in('id', proofIds)
+            if (error) throw error;
 
-            if (selectError) throw selectError;
-            renderTable(proofs);
+            // O Supabase RPC retorna objetos simples, precisamos reestruturá-los para o formato que renderTable espera
+            const formattedProofs = proofs.map(p => ({
+                id: p.id,
+                created_at: p.created_at,
+                client_code: p.client_code,
+                value: p.value,
+                status: p.status,
+                proof_urls: p.proof_urls,
+                faturado_pedido_code: p.faturado_pedido_code,
+                client_name_manual: p.client_name_manual,
+                account_note: p.account_note,
+                clients_erp: { client_name: p.client_erp_name }, // Simula a estrutura aninhada
+                payment_types: { name: p.payment_type_name, color: p.payment_type_color } // Simula a estrutura aninhada
+            }));
+
+            renderTable(formattedProofs);
+
         } catch (error) {
             console.error("Erro ao carregar comprovantes:", error);
-            listContainer.innerHTML = `<tr><td colspan="9" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
+            listContainer.innerHTML = `<tr><td colspan="9" class="error-message">Falha ao carregar dados. Verifique o console. Detalhe: ${error.message}</td></tr>`;
         } finally {
             App.hideLoader();
         }
     };
 
+
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
+        if (!listContainer) return;
+
         if (proofs.length === 0) {
-            // ALTERAÇÃO 4: Aumentar o colspan para 9
             listContainer.innerHTML = '<tr><td colspan="9">Nenhum resultado encontrado.</td></tr>';
             return;
         }
@@ -108,11 +117,7 @@ const ComprovantesModule = (() => {
                     <td class="col-payment-type" style="background-color: ${paymentType.color};">${paymentType.name}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td>${proof.faturado_pedido_code || '---'}</td>
-                    
-                    <!-- ALTERAÇÃO 5: Adicionar a nova célula (td) para a coluna 'Obs.' -->
-                    <!-- O atributo 'title' cria o tooltip no hover do mouse -->
                     <td class="col-obs" title="${proof.account_note || ''}">${obsText}</td>
-
                     <td class="col-actions">
                         <div class="action-buttons">
                             ${viewButtonHtml}
@@ -156,7 +161,7 @@ const ComprovantesModule = (() => {
 
             let existingProofsHtml = '';
             if (proof?.proof_urls && proof.proof_urls.length > 0) {
-                existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul id="existing-proofs-list">' + proof.proof_urls.map((url, index) => 
+                existingProofsHtml = '<h6>Comprovantes existentes:</h6><ul id="existing-proofs-list">' + proof.proof_urls.map((url, index) =>
                     `<li data-url="${url}">
                         <a href="${url}" target="_blank">Comprovante ${index + 1}</a>
                         <button type="button" class="btn-delete-proof" data-url="${url}" title="Excluir este comprovante">×</button>
@@ -203,7 +208,7 @@ const ComprovantesModule = (() => {
                     <button type="submit" class="btn btn-primary">${isNew ? 'Salvar Pagamento' : 'Salvar Alterações'}</button>
                 </form>
             `;
-            
+
             document.getElementById('modal-body').addEventListener('click', (e) => {
                 if (e.target.classList.contains('btn-delete-proof')) {
                     const urlToDelete = e.target.dataset.url;
@@ -282,7 +287,12 @@ const ComprovantesModule = (() => {
         }
 
         if (action === 'edit') {
-            const { data: proofToEdit, error } = await supabase.from('proofs').select('*, clients_erp(client_name)').eq('id', id).single();
+            // A busca para edição precisa ser mais completa para popular o modal corretamente
+            const { data: proofToEdit, error } = await supabase
+                .from('proofs')
+                .select('*, clients_erp(client_name)')
+                .eq('id', id)
+                .single();
             if (proofToEdit) renderProofModal(proofToEdit);
             else console.error("Erro ao buscar comprovante para edição:", error);
         } else if (action === 'confirm') {
@@ -295,7 +305,7 @@ const ComprovantesModule = (() => {
             renderGenerateCreditModal(id);
         }
     };
-    
+
     const handleFileSelect = (selectedFiles) => {
         const newFiles = Array.from(selectedFiles);
         let addedCount = 0;
@@ -337,8 +347,13 @@ const ComprovantesModule = (() => {
 
     const renderPreview = () => {
         const previewContainer = document.getElementById('file-preview');
-        const newFilesContainer = previewContainer.querySelector('#new-files-container') || document.createElement('div');
-        newFilesContainer.id = 'new-files-container';
+        let newFilesContainer = previewContainer.querySelector('#new-files-container');
+        if (!newFilesContainer) {
+            newFilesContainer = document.createElement('div');
+            newFilesContainer.id = 'new-files-container';
+            previewContainer.appendChild(newFilesContainer);
+        }
+        
         newFilesContainer.innerHTML = filesToUpload.length > 0 ? '<h6>Novos comprovantes a serem adicionados:</h6>' : '';
 
         const list = document.createElement('ul');
@@ -347,6 +362,7 @@ const ComprovantesModule = (() => {
             listItem.textContent = file.name;
             const removeBtn = document.createElement('button');
             removeBtn.textContent = ' (x)';
+            removeBtn.type = 'button';
             removeBtn.style.border = 'none';
             removeBtn.style.background = 'transparent';
             removeBtn.style.color = 'red';
@@ -359,7 +375,6 @@ const ComprovantesModule = (() => {
             list.appendChild(listItem);
         });
         newFilesContainer.appendChild(list);
-        previewContainer.appendChild(newFilesContainer);
     };
 
     const handleProofSubmit = async (e) => {
@@ -371,11 +386,18 @@ const ComprovantesModule = (() => {
         try {
             const proofId = form.proofId.value;
             const isNew = !proofId;
-            
+
             if (!isNew && urlsToDelete.length > 0) {
                 const pathsToDelete = urlsToDelete.map(url => {
-                    const parts = url.split('/comprovantes/');
-                    return parts.length > 1 ? parts[1] : null;
+                    try {
+                        const urlObject = new URL(url);
+                        // O caminho no Supabase Storage geralmente vem depois de '/storage/v1/object/public/seu-bucket/'
+                        const pathParts = urlObject.pathname.split('/comprovantes/');
+                        return pathParts.length > 1 ? pathParts[1] : null;
+                    } catch (err) {
+                        console.warn(`URL inválida ao tentar extrair caminho: ${url}`);
+                        return null;
+                    }
                 }).filter(Boolean);
 
                 if (pathsToDelete.length > 0) {
@@ -385,7 +407,7 @@ const ComprovantesModule = (() => {
                     }
                 }
             }
-            
+
             let uploadedUrls = [];
             if (filesToUpload.length > 0) {
                 for (const file of filesToUpload) {
@@ -561,6 +583,8 @@ const ComprovantesModule = (() => {
         App.showLoader();
         const pedidoCode = document.getElementById('pedidoCode').value;
         const faturarValue = parseFloat(document.getElementById('faturarValue').value);
+        const errorP = document.getElementById('modal-error');
+        errorP.textContent = '';
         try {
             if (!pedidoCode || isNaN(faturarValue) || faturarValue <= 0 || faturarValue > originalValue) {
                 throw new Error('Dados inválidos. Verifique o código do pedido e o valor.');
@@ -583,7 +607,7 @@ const ComprovantesModule = (() => {
             await loadProofs();
         } catch (error) {
             console.error("Erro ao faturar:", error);
-            document.getElementById('modal-error').textContent = error.message;
+            errorP.textContent = error.message;
         } finally {
             App.hideLoader();
         }
@@ -621,7 +645,6 @@ const ComprovantesModule = (() => {
                                 <th>Tipo</th>
                                 <th>Status</th>
                                 <th>Pedido</th>
-                                <!-- ALTERAÇÃO 6: Adicionar o cabeçalho (th) para a nova coluna -->
                                 <th>Obs.</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
@@ -641,14 +664,12 @@ const ComprovantesModule = (() => {
                 #existing-proofs-list { list-style-type: none; padding-left: 0; }
                 #existing-proofs-list li { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; border-radius: 4px; background-color: #f8f9fa; }
                 .btn-delete-proof { background: transparent; border: none; color: red; font-size: 1.5rem; cursor: pointer; padding: 0 5px; line-height: 1; }
-                
-                /* ALTERAÇÃO 7: Adicionar estilo para a coluna Obs. para truncar texto longo */
                 .col-obs {
-                    max-width: 150px; /* Ajuste a largura máxima conforme necessário */
+                    max-width: 150px;
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
-                    cursor: default; /* Mostra o cursor padrão ao invés do de texto */
+                    cursor: default;
                 }
             `;
             document.head.appendChild(style);
@@ -656,7 +677,7 @@ const ComprovantesModule = (() => {
 
         document.getElementById('btn-new-proof').addEventListener('click', () => renderProofModal());
         document.getElementById('btn-apply-filters').addEventListener('click', () => {
-            currentFilters.client_code = document.getElementById('filter-client-code').value;
+            currentFilters.client_code = document.getElementById('filter-client-code').value.toUpperCase();
             currentFilters.client_name = document.getElementById('filter-client-name').value;
             currentFilters.status = document.getElementById('filter-status').value;
             loadProofs();
@@ -664,7 +685,7 @@ const ComprovantesModule = (() => {
         document.getElementById('proofs-list').addEventListener('click', handleTableClick);
         await loadProofs(initialFilters);
     };
-    
+
     return {
         name: 'Comprovantes',
         render,
