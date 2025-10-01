@@ -140,10 +140,6 @@ const App = {
         }
     },
 
-    // ... (o resto do seu arquivo app.js permanece exatamente igual)
-    // ... (funções _renderVendedorDashboard, _renderCaixaDashboard, etc.)
-    // ... (funções setupHomeEventListeners, renderManagementModal, etc.)
-    // ...
     async _renderVendedorDashboard() {
         const { data: avisos } = await supabase.from('avisos').select('content').eq('is_active', true).gt('expires_at', new Date().toISOString());
         const avisosHtml = avisos && avisos.length > 0 ? `<ul>${avisos.map(a => `<li>${a.content}</li>`).join('')}</ul>` : '<p>Nenhum aviso no momento.</p>';
@@ -560,13 +556,31 @@ const App = {
         }
     },
 
+
     setupEventListeners() {
         const sidebar = document.getElementById('sidebar');
         const menuToggle = document.getElementById('menu-toggle');
-        menuToggle.addEventListener('click', () => sidebar.classList.toggle('active'));
+        // <<< MUDANÇA CRÍTICA: Pega a referência do novo overlay >>>
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
+
+        // Ação de abrir/fechar no botão de menu
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('active');
+        });
+
+        // <<< MUDANÇA CRÍTICA: Ação de fechar ao clicar no overlay >>>
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('active');
+        });
+
+        // Ação de fechar ao clicar em um link do menu
         document.getElementById('main-nav').addEventListener('click', (e) => {
             if (e.target.tagName === 'A' && e.target.classList.contains('nav-link')) {
                 e.preventDefault();
+                
+                // Fecha a sidebar (importante para mobile)
+                sidebar.classList.remove('active');
+
                 document.querySelectorAll('#main-nav .nav-link').forEach(link => link.classList.remove('active'));
                 e.target.classList.add('active');
                 const moduleName = e.target.dataset.module;
@@ -574,6 +588,7 @@ const App = {
                 else this.loadModule(moduleName);
             }
         });
+
         const modalContainer = document.getElementById('modal-container');
         modalContainer.addEventListener('click', (e) => {
             if (e.target === modalContainer || e.target.classList.contains('modal-close-btn')) {
