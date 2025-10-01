@@ -415,6 +415,7 @@ const CreditosModule = (() => {
                         ${credits.map(credit => `
                             <li>
                                 <strong>Reg.:</strong> ${credit.n_registro || 'N/A'}
+                                | <strong>Valor:</strong> ${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 ${credit.notes ? `| <strong>Obs.:</strong> ${credit.notes}` : ''}
                             </li>
                         `).join('')}
