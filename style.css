@@ -577,64 +577,76 @@ tbody tr:hover {
     margin: 0 auto;       /* Centraliza a imagem */
 }
 
-/* =============================================== */
-/* === REGRAS DA SIDEBAR (VERSÃO RESPONSIVA) === */
-/* =============================================== */
+/* ================================================= */
+/* === REGRAS DA SIDEBAR (VERSÃO FINAL) === */
+/* ================================================= */
 
-/* --- Estado Base da Sidebar --- */
-.sidebar {
-    background-color: var(--white-color);
-    border-right: 1px solid var(--border-color);
-    position: fixed;
-    top: 0;
-    left: 0;
-    height: 100%;
-    z-index: 1000; /* <<< CORREÇÃO CRÍTICA: Z-index mais alto que o overlay */
-    transition: width 0.3s ease, transform 0.3s ease;
+/* --- Estrutura Geral --- */
+/* Garante que a sidebar não apareça na tela de login */
+#app-screen {
+    display: flex;
+    height: 100vh;
+    opacity: 0; /* Começa invisível */
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+#app-screen.active {
+    opacity: 1;
+    visibility: visible;
 }
 
+/* --- Estilos Base da Sidebar --- */
+.sidebar {
+    background-color: var(--white-color); /* Fundo sólido branco */
+    border-right: 1px solid var(--border-color);
+    height: 100%;
+    position: fixed; /* Fixa na tela */
+    top: 0;
+    left: 0;
+    z-index: 1000; /* Fica acima de tudo, exceto modais */
+    transition: width 0.3s ease, transform 0.3s ease;
+    overflow-x: hidden; /* Evita barras de rolagem horizontais */
+}
+
+/* --- Estilos Base do Conteúdo Principal --- */
 .main-content {
+    flex-grow: 1; /* Ocupa o espaço restante */
+    height: 100vh;
+    overflow-y: auto; /* Permite rolagem apenas no conteúdo */
     transition: margin-left 0.3s ease;
 }
 
-/* --- Estilos para DESKTOP (Telas maiores que 768px) --- */
+/* --- Comportamento em DESKTOP (Telas maiores que 768px) --- */
 @media (min-width: 769px) {
     .sidebar {
-        width: 250px; /* Largura padrão expandida */
+        width: 250px; /* Largura padrão */
     }
-    .sidebar.is-collapsed {
-        width: 80px; /* Largura recolhida */
-    }
-    .sidebar.is-collapsed .sidebar-header h2,
-    .sidebar.is-collapsed #main-nav a {
-        /* Esconde o texto de forma acessível quando recolhido */
-        opacity: 0;
-        visibility: hidden;
+    .sidebar.collapsed {
+        width: 0; /* Recolhida, sem largura */
     }
     .main-content {
-        margin-left: 250px; /* Espaço para a sidebar expandida */
+        margin-left: 250px; /* Deixa espaço para a sidebar padrão */
     }
-    .sidebar.is-collapsed ~ .main-content {
-        /* O '~' seleciona o irmão que vem depois */
-        margin-left: 80px; /* Espaço para a sidebar recolhida */
+    .sidebar.collapsed ~ .main-content {
+        margin-left: 0; /* Conteúdo ocupa a tela toda quando a sidebar está recolhida */
     }
     .sidebar-overlay {
-        display: none; /* Overlay não é necessário no desktop */
+        display: none; /* Overlay não é usado no desktop */
     }
 }
 
-/* --- Estilos para MOBILE (Telas de até 768px) --- */
+/* --- Comportamento em MOBILE (Telas de até 768px) --- */
 @media (max-width: 768px) {
     .sidebar {
         width: 250px;
         transform: translateX(-100%); /* Escondida fora da tela por padrão */
-    }
-    .sidebar:not(.is-collapsed) {
-        transform: translateX(0); /* Mostra a sidebar ao remover a classe */
         box-shadow: 0 0 15px rgba(0,0,0,0.2);
     }
+    .sidebar.active {
+        transform: translateX(0); /* Mostra a sidebar ao adicionar a classe 'active' */
+    }
     .main-content {
-        margin-left: 0; /* Ocupa a tela inteira */
+        margin-left: 0; /* Conteúdo sempre ocupa a tela toda */
     }
     .sidebar-overlay {
         position: fixed;
@@ -648,8 +660,7 @@ tbody tr:hover {
         visibility: hidden;
         transition: opacity 0.3s ease, visibility 0.3s ease;
     }
-    /* Mostra o overlay quando a sidebar NÃO estiver recolhida */
-    .sidebar:not(.is-collapsed) + .sidebar-overlay {
+    .sidebar.active + .sidebar-overlay {
         opacity: 1;
         visibility: visible;
     }
