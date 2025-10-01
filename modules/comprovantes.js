@@ -31,7 +31,8 @@ const ComprovantesModule = (() => {
         App.showLoader();
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) { App.hideLoader(); return; }
-        listContainer.innerHTML = '<tr><td colspan="8">Buscando...</td></tr>';
+        // ALTERAÇÃO 1: Aumentar o colspan para 9 por causa da nova coluna
+        listContainer.innerHTML = '<tr><td colspan="9">Buscando...</td></tr>';
         try {
             const { data: idObjects, error: rpcError } = await supabase.rpc('filter_proof_ids', {
                 p_status: currentFilters.status,
@@ -44,16 +45,20 @@ const ComprovantesModule = (() => {
                 return;
             }
             const proofIds = idObjects.map(item => item.id);
+
+            // ALTERAÇÃO 2: Adicionar 'account_note' à lista de colunas selecionadas
             const { data: proofs, error: selectError } = await supabase
                 .from('proofs')
-                .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, clients_erp(client_name), payment_types(name, color)`)
+                .select(`id, created_at, client_code, value, status, proof_urls, faturado_pedido_code, client_name_manual, account_note, clients_erp(client_name), payment_types(name, color)`)
                 .in('id', proofIds)
                 .order('created_at', { ascending: false });
+
             if (selectError) throw selectError;
             renderTable(proofs);
         } catch (error) {
             console.error("Erro ao carregar comprovantes:", error);
-            listContainer.innerHTML = `<tr><td colspan="8" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
+            // ALTERAÇÃO 3: Aumentar o colspan do erro para 9
+            listContainer.innerHTML = `<tr><td colspan="9" class="error-message">Falha ao carregar dados. Verifique o console.</td></tr>`;
         } finally {
             App.hideLoader();
         }
@@ -62,14 +67,16 @@ const ComprovantesModule = (() => {
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (proofs.length === 0) {
-            listContainer.innerHTML = '<tr><td colspan="8">Nenhum resultado encontrado.</td></tr>';
+            // ALTERAÇÃO 4: Aumentar o colspan para 9
+            listContainer.innerHTML = '<tr><td colspan="9">Nenhum resultado encontrado.</td></tr>';
             return;
         }
         listContainer.innerHTML = proofs.map(proof => {
             const statusInfo = STATUS_MAP[proof.status] || { text: proof.status, class: '' };
             const paymentType = proof.payment_types || { name: 'N/A', color: 'grey' };
             const clientName = proof.clients_erp?.client_name || proof.client_name_manual || '---';
-            
+            const obsText = proof.account_note || '---';
+
             const hasProofs = proof.proof_urls && proof.proof_urls.length > 0;
             let viewButtonHtml = '';
             if (hasProofs) {
@@ -103,6 +110,11 @@ const ComprovantesModule = (() => {
                     <td class="col-payment-type" style="background-color: ${paymentType.color};">${paymentType.name}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td>${proof.faturado_pedido_code || '---'}</td>
+                    
+                    <!-- ALTERAÇÃO 5: Adicionar a nova célula (td) para a coluna 'Obs.' -->
+                    <!-- O atributo 'title' cria o tooltip no hover do mouse -->
+                    <td class="col-obs" title="${proof.account_note || ''}">${obsText}</td>
+
                     <td class="col-actions">
                         <div class="action-buttons">
                             ${viewButtonHtml}
@@ -611,6 +623,8 @@ const ComprovantesModule = (() => {
                                 <th>Tipo</th>
                                 <th>Status</th>
                                 <th>Pedido</th>
+                                <!-- ALTERAÇÃO 6: Adicionar o cabeçalho (th) para a nova coluna -->
+                                <th>Obs.</th>
                                 <th class="col-actions">Ações</th>
                             </tr>
                         </thead>
@@ -629,6 +643,15 @@ const ComprovantesModule = (() => {
                 #existing-proofs-list { list-style-type: none; padding-left: 0; }
                 #existing-proofs-list li { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; padding: 5px; border-radius: 4px; background-color: #f8f9fa; }
                 .btn-delete-proof { background: transparent; border: none; color: red; font-size: 1.5rem; cursor: pointer; padding: 0 5px; line-height: 1; }
+                
+                /* ALTERAÇÃO 7: Adicionar estilo para a coluna Obs. para truncar texto longo */
+                .col-obs {
+                    max-width: 150px; /* Ajuste a largura máxima conforme necessário */
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    cursor: default; /* Mostra o cursor padrão ao invés do de texto */
+                }
             `;
             document.head.appendChild(style);
         }
