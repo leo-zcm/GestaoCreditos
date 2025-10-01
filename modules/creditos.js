@@ -1,4 +1,4 @@
-// modules/creditos.js (VERSÃO COM DETALHES NO MODAL DE ABATIMENTO)
+// modules/creditos.js (VERSÃO COM DETALHES NO MODAL DE ABATIMENTO E ORDENAÇÃO CORRETA)
 
 const CreditosModule = (() => {
     let currentFilters = { status: 'Disponível', date_type: 'created_at' };
@@ -9,12 +9,6 @@ const CreditosModule = (() => {
 
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
-
-        console.log('[CreditosModule] VERIFICAÇÃO FINAL DE PERMISSÃO:', {
-            'Permissão (creditos.view)': userPermissions.view,
-            'ID de Vendedor (seller_id_erp)': App.userProfile.seller_id_erp,
-            'Resultado (isOwnView)': isOwnView
-        });
 
         let sellerFilterHtml;
         if (isOwnView) {
@@ -37,7 +31,7 @@ const CreditosModule = (() => {
                     <button id="btn-new-credit" class="btn btn-primary">Adicionar Crédito</button>
                 </div>
                 <div class="filters">
-                    <input type="text" id="filter-client-code" placeholder="Cód. Cliente">
+                    <input type="text" id="filter-client-code" placeholder="Cód. Cliente" style="text-transform: uppercase;">
                     <input type="text" id="filter-n-registro" placeholder="Nº Registro">
                     <input type="text" id="filter-client-name" placeholder="Nome do Cliente">
                     <select id="filter-status">
@@ -83,7 +77,6 @@ const CreditosModule = (() => {
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
             style.id = styleId;
-            // <<< MUDANÇA CRÍTICA: Adicionado estilo para a lista de detalhes no modal >>>
             style.innerHTML = `
                 #credits-table { font-size: 0.9rem; table-layout: fixed; width: 100%; }
                 #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
@@ -119,7 +112,7 @@ const CreditosModule = (() => {
         if (!isOwnView) {
             await populateSellersDropdown();
             const sellerDropdown = document.getElementById('filter-seller');
-            sellerDropdown.value = currentFilters.seller_id || '';
+            if(sellerDropdown) sellerDropdown.value = currentFilters.seller_id || '';
         }
         
         setupEventListeners();
@@ -156,12 +149,14 @@ const CreditosModule = (() => {
         }
     };
 
+    // <<< FUNÇÃO loadCredits TOTALMENTE REFATORADA E OTIMIZADA >>>
     const loadCredits = async () => {
         App.showLoader();
         
         const userPermissions = App.userProfile.permissions?.creditos || {};
         const isOwnView = userPermissions.view === 'own' && App.userProfile.seller_id_erp;
     
+        // Sincroniza os inputs com os filtros atuais
         document.getElementById('filter-client-code').value = currentFilters.client_code || '';
         document.getElementById('filter-n-registro').value = currentFilters.n_registro || '';
         document.getElementById('filter-client-name').value = currentFilters.client_name || '';
@@ -171,41 +166,34 @@ const CreditosModule = (() => {
         listContainer.innerHTML = '<tr><td colspan="10">Buscando...</td></tr>';
     
         try {
-            const selectStatement = `*, clients_erp!inner(client_name, id_vendedor)`;
-            let query = supabase.from('credits').select(selectStatement);
-    
-            // --- Filtros de permissão e vendedor ---
-            if (isOwnView) {
-                query = query.eq('clients_erp.id_vendedor', App.userProfile.seller_id_erp);
-            } else if (currentFilters.seller_id) {
-                query = query.eq('clients_erp.id_vendedor', currentFilters.seller_id);
-            }
-    
-            // --- Outros filtros ---
-            if (currentFilters.status) query = query.eq('status', currentFilters.status);
-            if (currentFilters.n_registro) query = query.eq('n_registro', currentFilters.n_registro);
-            if (currentFilters.client_code) query = query.eq('client_code', currentFilters.client_code.toUpperCase());
-            
-            // CORREÇÃO 1: Filtro de nome do cliente movido para a consulta do banco de dados
-            if (currentFilters.client_name) {
-                // Usamos 'ilike' para busca case-insensitive na tabela relacionada
-                query = query.ilike('clients_erp.client_name', `%${currentFilters.client_name}%`);
-            }
-    
-            const dateColumn = currentFilters.date_type || 'created_at';
-            if (currentFilters.date_start) query = query.gte(dateColumn, currentFilters.date_start);
-            if (currentFilters.date_end) query = query.lte(dateColumn, currentFilters.date_end + 'T23:59:59');
-    
-            // CORREÇÃO 2: Ordenação por nome do cliente (A-Z) e, como desempate, data de criação
-            let { data: credits, error } = await query
-                .order('client_name', { foreignTable: 'clients_erp', ascending: true })
-                .order('created_at', { ascending: false });
+            // Prepara os parâmetros para a função RPC
+            const params = {
+                p_status: currentFilters.status || null,
+                p_client_code: currentFilters.client_code ? currentFilters.client_code.toUpperCase() : null,
+                p_n_registro: currentFilters.n_registro || null,
+                p_name_search: currentFilters.client_name || null,
+                p_seller_id_erp: isOwnView ? null : (currentFilters.seller_id || null), // Se for isOwnView, o filtro de permissão prevalece
+                p_permission_seller_id: isOwnView ? App.userProfile.seller_id_erp : null,
+                p_date_type: currentFilters.date_type || 'created_at',
+                p_date_start: currentFilters.date_start || null,
+                p_date_end: currentFilters.date_end || null
+            };
+
+            // Chamada única e eficiente para a nova função RPC
+            const { data, error } = await supabase.rpc('filter_credits', params);
             
             if (error) throw error;
+
+            // Transforma o resultado "plano" da RPC para a estrutura aninhada que o renderTable espera
+            const formattedCredits = data.map(credit => ({
+                ...credit, // Mantém todos os campos do crédito
+                clients_erp: { // Cria o objeto aninhado esperado
+                    client_name: credit.client_erp_name,
+                    id_vendedor: credit.client_erp_seller_id
+                }
+            }));
     
-            // O filtro de nome do cliente que estava aqui foi REMOVIDO.
-    
-            renderTable(credits);
+            renderTable(formattedCredits);
     
         } catch (error) {
             console.error("Erro ao carregar créditos:", error);
@@ -302,7 +290,8 @@ const CreditosModule = (() => {
         const productCodeInput = document.getElementById('productCode');
         
         const fetchClientData = async () => {
-            const code = clientCodeInput.value;
+            const code = clientCodeInput.value.toUpperCase();
+            clientCodeInput.value = code;
             if (!code) return;
             const { data: client } = await supabase.from('clients_erp').select('client_name, id_vendedor').eq('client_code', code).single();
             if (client) {
@@ -320,7 +309,8 @@ const CreditosModule = (() => {
         };
 
         const fetchProductData = async () => {
-            const code = document.getElementById('productCode').value;
+            const code = document.getElementById('productCode').value.toUpperCase();
+            productCodeInput.value = code;
             const descriptionInput = document.getElementById('description');
             const quantityInput = document.getElementById('quantity');
             if (!code) {
@@ -391,13 +381,11 @@ const CreditosModule = (() => {
         }
     };
 
-    // <<< MUDANÇA CRÍTICA: Função `renderAbateModal` totalmente refatorada >>>
     const renderAbateModal = async (creditIds) => {
         App.showLoader();
         const modalBody = document.getElementById('modal-body');
         
         try {
-            // 1. Busca os detalhes completos dos créditos de uma só vez
             const { data: credits, error } = await supabase
                 .from('credits')
                 .select('value, n_registro, notes')
@@ -406,10 +394,8 @@ const CreditosModule = (() => {
             if (error) throw error;
             if (!credits || credits.length === 0) throw new Error("Créditos selecionados não foram encontrados.");
 
-            // 2. Calcula o valor total
             const totalValue = credits.reduce((sum, credit) => sum + credit.value, 0);
 
-            // 3. Gera o HTML com os detalhes dos créditos
             const creditsDetailsHtml = `
                 <div class="credit-details-summary">
                     <h4>Créditos a serem abatidos:</h4>
@@ -428,7 +414,6 @@ const CreditosModule = (() => {
             const isMulti = creditIds.length > 1;
             const title = isMulti ? `Abater ${creditIds.length} Créditos` : 'Abater Crédito';
             
-            // 4. Monta o modal completo com os novos detalhes
             modalBody.innerHTML = `
                 <h2>${title}</h2>
                 <form id="abate-form">
