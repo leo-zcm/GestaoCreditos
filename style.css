@@ -576,3 +576,25 @@ tbody tr:hover {
     display: block;
     margin: 0 auto;       /* Centraliza a imagem */
 }
+
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5); /* Fundo preto semi-transparente */
+    z-index: 998; /* Fica abaixo da sidebar (999), mas acima do conteúdo */
+    
+    /* Escondido por padrão */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+/* Mostra o overlay APENAS quando a sidebar estiver ativa */
+/* O seletor '+' significa "o irmão adjacente" */
+.sidebar.active + .sidebar-overlay {
+    opacity: 1;
+    visibility: visible;
+}
