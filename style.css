@@ -597,7 +597,7 @@ tbody tr:hover {
 
 /* --- Estilos Base da Sidebar --- */
 .sidebar {
-    background-color: var(--white-color); /* Fundo sólido branco */
+    background-color: var(--sidebar-bg); /* Fundo sólido branco */
     border-right: 1px solid var(--border-color);
     height: 100%;
     position: fixed; /* Fixa na tela */
