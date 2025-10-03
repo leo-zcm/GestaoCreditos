@@ -273,12 +273,12 @@ const CreditosModule = (() => {
                     <td data-label="Valor">${credit.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td data-label="Ped. Abatido" class="col-pedido">${credit.abatement_order || '---'}</td>
                     <td data-label="Ações" class="col-actions">
-                        ${credit.status === 'Disponível' ? `
-                            <div class="action-buttons">
-                                ${creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
-                                ${creditPerms.abater ? `<button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>` : ''}
-                            </div>
-                        ` : ''}
+                        <div class="action-buttons">
+                            ${credit.status === 'Disponível' && creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
+                            ${credit.status === 'Disponível' && creditPerms.abater ? `<button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>` : ''}
+                            ${creditPerms.view_log ? `<button class="btn btn-info btn-sm" data-action="view-log" data-id="${credit.id}">Log</button>` : ''}
+                            ${creditPerms.estornar ? `<button class="btn btn-danger btn-sm" data-action="estornar" data-id="${credit.id}">Estornar</button>` : ''}
+                        </div>
                     </td>
                 </tr>
             `;
@@ -590,16 +590,21 @@ const CreditosModule = (() => {
         const table = document.getElementById('credits-list');
         table.addEventListener('click', async (e) => {
             const target = e.target;
-            if (target.tagName === 'BUTTON') {
-                const action = target.dataset.action;
-                const id = target.dataset.id;
+            const button = target.closest('button[data-action]');
+            if (button) {
+                const action = button.dataset.action;
+                const id = button.dataset.id;
                 if (action === 'edit') {
                     const { data: credit } = await supabase.from('credits').select('*, clients_erp(client_name)').eq('id', id).single();
                     renderCreditModal(credit);
+                } else if (action === 'abater') {
+                    renderAbateModal([id]);
+                } else if (action === 'estornar') {
+                    renderEstornarModal(id);
+                } else if (action === 'view-log') {
+                    renderLogModal(id);
                 }
-                if (action === 'abater') renderAbateModal([id]);
-            }
-            if (target.classList.contains('credit-select')) {
+            } else if (target.classList.contains('credit-select')) {
                 const id = target.dataset.id;
                 if (target.checked) {
                     const { data: credit } = await supabase.from('credits').select('id, value').eq('id', id).single();
@@ -626,6 +631,151 @@ const CreditosModule = (() => {
         });
     };
 
+    const renderEstornarModal = async (creditId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        try {
+            const { data: credit, error } = await supabase.from('credits').select('status').eq('id', creditId).single();
+            if (error) throw error;
+
+            modalBody.innerHTML = `
+                <h2>Estornar / Alterar Status do Crédito</h2>
+                <form id="estornar-credit-form">
+                    <div class="form-group">
+                        <label for="newCreditStatus">Novo Status</label>
+                        <select id="newCreditStatus" class="form-control">
+                            <option value="Disponível" ${credit.status === 'Disponível' ? 'selected' : ''}>Disponível</option>
+                            <option value="Abatido" ${credit.status === 'Abatido' ? 'selected' : ''}>Abatido</option>
+                        </select>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+                        <button type="submit" class="btn btn-primary">Salvar Alteração</button>
+                        <button type="button" id="btn-delete-credit" class="btn btn-danger">Excluir Crédito</button>
+                    </div>
+                </form>
+            `;
+
+            document.getElementById('estornar-credit-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleEstornarSubmit(creditId);
+            });
+            document.getElementById('btn-delete-credit').addEventListener('click', () => {
+                handleDeleteCredit(creditId);
+            });
+
+            document.getElementById('modal-container').classList.add('active');
+        } catch (err) {
+            console.error("Erro ao abrir modal de estorno de crédito:", err);
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleEstornarSubmit = async (creditId) => {
+        App.showLoader();
+        const newStatus = document.getElementById('newCreditStatus').value;
+        try {
+            // Para estornar um crédito abatido, limpamos os campos de abatimento
+            const updateData = { status: newStatus };
+            if (newStatus === 'Disponível') {
+                updateData.abated_at = null;
+                updateData.abated_by = null;
+                updateData.abatement_order = null;
+            } else {
+                 // Se forçar para 'Abatido', precisa de um pedido. Poderia abrir outro modal, mas por simplicidade, vamos apenas avisar.
+                alert("Para marcar como 'Abatido', use a função 'Abater'. Esta função serve principalmente para reverter um abatimento.");
+                App.hideLoader();
+                return;
+            }
+
+            const { error } = await supabase.from('credits').update(updateData).eq('id', creditId);
+            if (error) throw error;
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadCredits();
+        } catch (error) {
+            console.error("Erro ao estornar crédito:", error);
+            document.getElementById('modal-error').textContent = `Erro: ${error.message}`;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleDeleteCredit = async (creditId) => {
+        if (!confirm("ATENÇÃO!\n\nExcluir este crédito é uma ação permanente e não pode ser desfeita.\n\nDeseja continuar?")) {
+            return;
+        }
+        App.showLoader();
+        try {
+            const { error } = await supabase.from('credits').delete().eq('id', creditId);
+            if (error) throw error;
+            alert("Crédito excluído com sucesso.");
+            document.getElementById('modal-container').classList.remove('active');
+            await loadCredits();
+        } catch (error) {
+            console.error("Erro ao excluir crédito:", error);
+            alert(`Falha ao excluir. Pode haver outros registros dependentes deste crédito. Erro: ${error.message}`);
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const renderLogModal = async (creditId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `<h2>Log de Alterações</h2><p>Carregando...</p>`;
+        document.getElementById('modal-container').classList.add('active');
+
+        try {
+            const { data: credit, error } = await supabase
+                .from('credits')
+                .select(`
+                    created_at, abatement_order, abated_at,
+                    creator:created_by(full_name),
+                    abater:abated_by(full_name)
+                `)
+                .eq('id', creditId)
+                .single();
+            if (error) throw error;
+
+            let logEvents = [];
+            logEvents.push({
+                date: new Date(credit.created_at),
+                user: credit.creator.full_name,
+                action: 'Crédito criado.'
+            });
+
+            if (credit.abated_at) {
+                logEvents.push({
+                    date: new Date(credit.abated_at),
+                    user: credit.abater.full_name,
+                    action: `Crédito abatido no pedido/lançamento <strong>${credit.abatement_order}</strong>.`
+                });
+            }
+            
+            logEvents.sort((a, b) => a.date - b.date);
+
+            const logHtml = `
+                <ul>
+                    ${logEvents.map(event => `
+                        <li>
+                            <strong>${event.date.toLocaleString('pt-BR')}</strong> por 
+                            <em>${event.user}</em>: ${event.action}
+                        </li>`).join('')}
+                </ul>
+                <small>Nota: O log detalhado de edições de valores não é rastreado.</small>
+            `;
+
+            modalBody.innerHTML = `<h2>Log de Alterações</h2>${logHtml}`;
+        } catch (err) {
+            console.error("Erro ao carregar log do crédito:", err);
+            modalBody.innerHTML = `<p class="error-message">Falha ao carregar o histórico.</p>`;
+        } finally {
+            App.hideLoader();
+        }
+    };
+    
     return {
         name: 'Créditos',
         render,
