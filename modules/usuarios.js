@@ -12,14 +12,16 @@ const UsuariosModule = (() => {
             label: 'Comprovantes',
             perms: {
                 view: 'Ver Módulo', create: 'Inserir Pagamentos', edit: 'Editar (antes de confirmar)',
-                confirm: 'Confirmar', faturar: 'Faturar', baixar: 'Baixar', gerar_credito: 'Gerar Crédito'
+                confirm: 'Confirmar', faturar: 'Faturar', baixar: 'Baixar', gerar_credito: 'Gerar Crédito',
+                estornar: 'Estornar / Excluir', view_log: 'Ver Log de Alterações'
             }
         },
         creditos: {
             label: 'Créditos',
             perms: {
                 view: { label: 'Ver Módulo', type: 'select', options: { all: 'Todos Vendedores', own: 'Apenas Próprios' } },
-                create: 'Inserir Crédito', edit: 'Editar (enquanto disponível)', abater: 'Abater Crédito'
+                create: 'Inserir Crédito', edit: 'Editar (enquanto disponível)', abater: 'Abater Crédito',
+                estornar: 'Estornar / Excluir', view_log: 'Ver Log de Alterações'
             }
         },
         solicitacoes: {
@@ -27,7 +29,8 @@ const UsuariosModule = (() => {
             perms: {
                 view: { label: 'Ver Solicitações', type: 'select', options: { all: 'Todos Vendedores', own: 'Apenas Próprias', none: 'Não Ver' } },
                 create: 'Inserir Solicitação',
-                approve: 'Aprovar/Rejeitar'
+                approve: 'Aprovar/Rejeitar',
+                estornar: 'Estornar / Excluir', view_log: 'Ver Log de Alterações'
             }
         }
     };
