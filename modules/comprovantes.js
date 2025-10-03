@@ -69,7 +69,6 @@ const ComprovantesModule = (() => {
         }
     };
 
-
     const renderTable = (proofs) => {
         const listContainer = document.getElementById('proofs-list');
         if (!listContainer) return;
@@ -78,6 +77,8 @@ const ComprovantesModule = (() => {
             listContainer.innerHTML = '<tr><td colspan="9">Nenhum resultado encontrado.</td></tr>';
             return;
         }
+        const userPermissions = App.userProfile.permissions?.comprovantes || {};
+
         listContainer.innerHTML = proofs.map(proof => {
             const statusInfo = STATUS_MAP[proof.status] || { text: proof.status, class: '' };
             const paymentType = proof.payment_types || { name: 'N/A', color: 'grey' };
@@ -93,7 +94,6 @@ const ComprovantesModule = (() => {
             }
 
             let actions = { edit: false, confirm: false, faturar: false, baixar: false, credit: false };
-            const userPermissions = App.userProfile.permissions?.comprovantes || {};
             switch (proof.status) {
                 case 'AGUARDANDO CONFIRMAÇÃO':
                     actions.edit = userPermissions.edit;
@@ -126,6 +126,8 @@ const ComprovantesModule = (() => {
                             ${actions.faturar ? `<button class="btn btn-primary btn-sm" data-action="faturar" data-id="${proof.id}">Faturar</button>` : ''}
                             ${actions.baixar ? `<button class="btn btn-secondary btn-sm" data-action="baixar" data-id="${proof.id}">Baixar</button>` : ''}
                             ${actions.credit ? `<button class="btn btn-warning btn-sm" data-action="credit" data-id="${proof.id}">Gerar Crédito</button>` : ''}
+                            ${userPermissions.view_log ? `<button class="btn btn-info btn-sm" data-action="view-log" data-id="${proof.id}">Log</button>` : ''}
+                            ${userPermissions.estornar ? `<button class="btn btn-danger btn-sm" data-action="estornar" data-id="${proof.id}">Estornar</button>` : ''}
                         </div>
                     </td>
                 </tr>
@@ -287,7 +289,6 @@ const ComprovantesModule = (() => {
         }
 
         if (action === 'edit') {
-            // A busca para edição precisa ser mais completa para popular o modal corretamente
             const { data: proofToEdit, error } = await supabase
                 .from('proofs')
                 .select('*, clients_erp(client_name)')
@@ -303,9 +304,13 @@ const ComprovantesModule = (() => {
             if (confirm('Deseja baixar este pagamento?')) await updateProofStatus(id, 'BAIXADO');
         } else if (action === 'credit') {
             renderGenerateCreditModal(id);
+        } else if (action === 'estornar') {
+            renderEstornarModal(id);
+        } else if (action === 'view-log') {
+            renderLogModal(id);
         }
     };
-
+    
     const handleFileSelect = (selectedFiles) => {
         const newFiles = Array.from(selectedFiles);
         let addedCount = 0;
@@ -684,6 +689,166 @@ const ComprovantesModule = (() => {
         });
         document.getElementById('proofs-list').addEventListener('click', handleTableClick);
         await loadProofs(initialFilters);
+    };
+
+    const renderEstornarModal = async (proofId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        try {
+            const { data: proof, error } = await supabase.from('proofs').select('status').eq('id', proofId).single();
+            if (error) throw error;
+
+            const statusOptions = Object.keys(STATUS_MAP).map(statusKey =>
+                `<option value="${statusKey}" ${proof.status === statusKey ? 'selected' : ''}>${STATUS_MAP[statusKey].text}</option>`
+            ).join('');
+
+            modalBody.innerHTML = `
+                <h2>Estornar / Alterar Status</h2>
+                <form id="estornar-form">
+                    <div class="form-group">
+                        <label for="newStatus">Selecione o novo status para este registro:</label>
+                        <select id="newStatus" class="form-control">${statusOptions}</select>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+                        <button type="submit" class="btn btn-primary">Salvar Alteração</button>
+                        <button type="button" id="btn-delete-proof" class="btn btn-danger">Excluir Registro</button>
+                    </div>
+                </form>
+            `;
+
+            document.getElementById('estornar-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleEstornarSubmit(proofId, proof.status);
+            });
+            document.getElementById('btn-delete-proof').addEventListener('click', () => {
+                handleDeleteProof(proofId);
+            });
+
+            document.getElementById('modal-container').classList.add('active');
+        } catch (err) {
+            console.error("Erro ao abrir modal de estorno:", err);
+            modalBody.innerHTML = `<p class="error-message">Não foi possível carregar os dados do registro.</p>`;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleEstornarSubmit = async (proofId, oldStatus) => {
+        const newStatus = document.getElementById('newStatus').value;
+        if (newStatus === oldStatus) {
+            document.getElementById('modal-error').textContent = "O novo status deve ser diferente do atual.";
+            return;
+        }
+        App.showLoader();
+        try {
+            // 1. Atualiza o comprovante
+            const { error: updateError } = await supabase.from('proofs').update({ status: newStatus, updated_at: new Date() }).eq('id', proofId);
+            if (updateError) throw updateError;
+
+            // 2. Grava no histórico
+            const { error: historyError } = await supabase.from('proof_history').insert({
+                proof_id: proofId,
+                changed_by: App.userProfile.id,
+                from_status: oldStatus,
+                to_status: newStatus,
+                details: { action: 'Estorno Manual' }
+            });
+            if (historyError) console.warn("Falha ao gravar no histórico:", historyError.message);
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadProofs();
+        } catch (error) {
+            console.error("Erro ao estornar comprovante:", error);
+            document.getElementById('modal-error').textContent = `Erro: ${error.message}`;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleDeleteProof = async (proofId) => {
+        if (!confirm("ATENÇÃO!\n\nVocê está prestes a excluir este registro permanentemente. Esta ação não pode ser desfeita.\n\nDeseja continuar?")) {
+            return;
+        }
+        App.showLoader();
+        try {
+            // É crucial deletar o histórico primeiro para evitar violação de chave estrangeira
+            await supabase.from('proof_history').delete().eq('proof_id', proofId);
+            
+            // Agora deleta o comprovante principal
+            const { error } = await supabase.from('proofs').delete().eq('id', proofId);
+            if (error) throw error;
+
+            alert("Registro excluído com sucesso.");
+            document.getElementById('modal-container').classList.remove('active');
+            await loadProofs();
+        } catch (error) {
+            console.error("Erro ao excluir comprovante:", error);
+            alert(`Falha ao excluir o registro. Pode haver um crédito vinculado a ele. Erro: ${error.message}`);
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const renderLogModal = async (proofId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `<h2>Log de Alterações</h2><p>Carregando...</p>`;
+        document.getElementById('modal-container').classList.add('active');
+
+        try {
+            // Busca o evento de criação e o histórico de alterações
+            const { data: proofData, error: proofError } = await supabase
+                .from('proofs')
+                .select('created_at, created_by, profiles(full_name)')
+                .eq('id', proofId)
+                .single();
+            if (proofError) throw proofError;
+
+            const { data: historyData, error: historyError } = await supabase
+                .from('proof_history')
+                .select('changed_at, from_status, to_status, changed_by, profiles(full_name)')
+                .eq('proof_id', proofId)
+                .order('changed_at', { ascending: true });
+            if (historyError) throw historyError;
+
+            let logEvents = [];
+
+            // Adiciona o evento de criação
+            logEvents.push({
+                date: new Date(proofData.created_at),
+                user: proofData.profiles.full_name,
+                action: 'Registro criado.'
+            });
+
+            // Adiciona os eventos de alteração de status
+            historyData.forEach(entry => {
+                logEvents.push({
+                    date: new Date(entry.changed_at),
+                    user: entry.profiles.full_name,
+                    action: `Status alterado de <strong>${entry.from_status || 'N/A'}</strong> para <strong>${entry.to_status}</strong>.`
+                });
+            });
+
+            // Ordena todos os eventos por data
+            logEvents.sort((a, b) => a.date - b.date);
+
+            const logHtml = logEvents.length > 0
+                ? '<ul>' + logEvents.map(event => `
+                    <li>
+                        <strong>${event.date.toLocaleString('pt-BR')}</strong> por 
+                        <em>${event.user}</em>: ${event.action}
+                    </li>`).join('') + '</ul>'
+                : '<p>Nenhuma alteração registrada.</p>';
+
+            modalBody.innerHTML = `<h2>Log de Alterações</h2>${logHtml}`;
+
+        } catch (error) {
+            console.error("Erro ao carregar log:", error);
+            modalBody.innerHTML = `<p class="error-message">Falha ao carregar o histórico.</p>`;
+        } finally {
+            App.hideLoader();
+        }
     };
 
     return {
