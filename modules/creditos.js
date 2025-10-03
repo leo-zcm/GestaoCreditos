@@ -73,11 +73,11 @@ const CreditosModule = (() => {
             </div>
         `;
 
-
         const styleId = 'creditos-module-style';
         if (!document.getElementById(styleId)) {
             const style = document.createElement('style');
             style.id = styleId;
+            // <<< MODIFIQUE AQUI >>>
             style.innerHTML = `
                 #credits-table { font-size: 0.9rem; table-layout: fixed; width: 100%; }
                 #credits-table td, #credits-table th { padding: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
@@ -85,7 +85,21 @@ const CreditosModule = (() => {
                 .col-qtd { width: 60px; text-align: center; }
                 .col-pedido { width: 120px; } 
                 .col-actions { width: 180px; text-align: right; }
-                .action-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; }
+                
+                /* --- CSS MODIFICADO --- */
+                .action-buttons { 
+                    display: flex; 
+                    flex-direction: column; /* Empilha as linhas de botões */
+                    align-items: flex-end;  /* Alinha as linhas à direita */
+                    gap: 0.3rem;            /* Espaço vertical entre as linhas */
+                }
+                .action-row {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 0.5rem;            /* Espaço horizontal entre os botões */
+                }
+                /* --- FIM DA MODIFICAÇÃO --- */
+
                 .selection-summary { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background-color: var(--light-color); border-top: 1px solid var(--border-color); margin: 1rem -1.5rem -1.5rem -1.5rem; border-radius: 0 0 8px 8px; }
                 .credit-details-summary { background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 1rem; margin-bottom: 1rem; }
                 .credit-details-summary h4 { margin-top: 0; margin-bottom: 0.5rem; font-size: 1rem; }
@@ -146,6 +160,7 @@ const CreditosModule = (() => {
                     }
                     #credits-table td.col-actions .action-buttons { 
                         justify-content: flex-end; 
+                        align-items: flex-end; /* Garante alinhamento correto no mobile */
                     }
                 }
             `;
@@ -259,8 +274,11 @@ const CreditosModule = (() => {
             listContainer.innerHTML = '<tr><td colspan="10">Nenhum resultado encontrado.</td></tr>';
             return;
         }
+        // <<< MODIFIQUE AQUI >>>
         listContainer.innerHTML = credits.map(credit => {
             const isSelected = selectedCredits.has(credit.id);
+            const isDisponivel = credit.status === 'Disponível';
+
             return `
                 <tr class="${isSelected ? 'selected' : ''}">
                     <td data-label="Selecionar" class="col-select"><input type="checkbox" class="credit-select" data-id="${credit.id}" ${isSelected ? 'checked' : ''}></td>
@@ -274,10 +292,18 @@ const CreditosModule = (() => {
                     <td data-label="Ped. Abatido" class="col-pedido">${credit.abatement_order || '---'}</td>
                     <td data-label="Ações" class="col-actions">
                         <div class="action-buttons">
-                            ${credit.status === 'Disponível' && creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
-                            ${credit.status === 'Disponível' && creditPerms.abater ? `<button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>` : ''}
-                            ${creditPerms.view_log ? `<button class="btn btn-info btn-sm" data-action="view-log" data-id="${credit.id}">Log</button>` : ''}
-                            ${creditPerms.estornar ? `<button class="btn btn-danger btn-sm" data-action="estornar" data-id="${credit.id}">Estornar</button>` : ''}
+                            <!-- Linha 1: Ações principais (condicionais ao status) -->
+                            ${isDisponivel ? `
+                                <div class="action-row">
+                                    ${creditPerms.edit ? `<button class="btn btn-secondary btn-sm" data-action="edit" data-id="${credit.id}">Editar</button>` : ''}
+                                    ${creditPerms.abater ? `<button class="btn btn-success btn-sm" data-action="abater" data-id="${credit.id}">Abater</button>` : ''}
+                                </div>
+                            ` : ''}
+                            <!-- Linha 2: Ações administrativas -->
+                            <div class="action-row">
+                                ${creditPerms.view_log ? `<button class="btn btn-info btn-sm" data-action="view-log" data-id="${credit.id}">Log</button>` : ''}
+                                ${creditPerms.estornar ? `<button class="btn btn-danger btn-sm" data-action="estornar" data-id="${credit.id}">Estornar</button>` : ''}
+                            </div>
                         </div>
                     </td>
                 </tr>
