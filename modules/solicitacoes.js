@@ -146,7 +146,8 @@ const SolicitacoesModule = (() => {
 
     const renderTable = (requests) => {
         const listContainer = document.getElementById('requests-list');
-        const canApprove = App.userProfile.permissions?.solicitacoes?.approve;
+        const userPermissions = App.userProfile.permissions?.solicitacoes || {};
+        const canApprove = userPermissions.approve;
 
         if (requests.length === 0) {
             listContainer.innerHTML = '<tr><td colspan="8">Nenhuma solicitação encontrada.</td></tr>';
@@ -159,7 +160,6 @@ const SolicitacoesModule = (() => {
             
             let creditCellHtml;
             if (req.credits.length > 1) {
-                // Armazena os dados completos dos créditos em um atributo JSON para o modal
                 const creditsJson = JSON.stringify(req.credits);
                 creditCellHtml = `<span class="clickable-info" data-action="show-multiple-credits" data-credits-json='${creditsJson}'>Múltiplos</span>`;
             } else {
@@ -177,12 +177,14 @@ const SolicitacoesModule = (() => {
                     <td>${req.debit_value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                     <td><span class="status-badge ${statusInfo.class}">${statusInfo.text}</span></td>
                     <td class="col-actions">
-                        ${showActions ? `
-                            <div class="action-buttons">
+                        <div class="action-buttons">
+                            ${showActions ? `
                                 <button class="btn btn-success btn-sm" data-action="approve" data-id="${req.id}">Aprovar</button>
                                 <button class="btn btn-danger btn-sm" data-action="reject" data-id="${req.id}">Rejeitar</button>
-                            </div>
-                        ` : (req.erp_debit_code || req.rejection_reason ? `<small>${req.erp_debit_code || req.rejection_reason}</small>` : '---')}
+                            ` : (req.erp_debit_code || req.rejection_reason ? `<small>${req.erp_debit_code || req.rejection_reason}</small>` : '---')}
+                            ${userPermissions.view_log ? `<button class="btn btn-info btn-sm" data-action="view-log" data-id="${req.id}">Log</button>` : ''}
+                            ${userPermissions.estornar ? `<button class="btn btn-danger btn-sm" data-action="estornar" data-id="${req.id}">Estornar</button>` : ''}
+                        </div>
                     </td>
                 </tr>
             `;
@@ -495,17 +497,169 @@ const SolicitacoesModule = (() => {
                 const action = button.dataset.action;
                 const id = button.dataset.id;
                 if (action === 'approve') renderApprovalModal(id);
-                if (action === 'reject') renderRejectionModal(id);
-                return; // Impede que o clique no botão propague para o span
+                else if (action === 'reject') renderRejectionModal(id);
+                else if (action === 'estornar') renderEstornarModal(id);
+                else if (action === 'view-log') renderLogModal(id);
+                return;
             }
 
-            // <<< MELHORIA: EVENTO PARA OS ITENS CLICÁVEIS >>>
             const infoSpan = e.target.closest('.clickable-info');
             if (infoSpan) {
                 const action = infoSpan.dataset.action;
                 showInfoModal(action, infoSpan);
             }
         });
+    };
+
+    // <<< NOVAS FUNÇÕES ADICIONADAS AO FINAL DO ARQUIVO, ANTES DO `return` >>>
+    const renderEstornarModal = async (requestId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        try {
+            const { data: request, error } = await supabase.from('dc_requests').select('status').eq('id', requestId).single();
+            if (error) throw error;
+
+            const statusOptions = Object.keys(STATUS_MAP).map(statusKey =>
+                `<option value="${statusKey}" ${request.status === statusKey ? 'selected' : ''}>${STATUS_MAP[statusKey].text}</option>`
+            ).join('');
+
+            modalBody.innerHTML = `
+                <h2>Estornar / Alterar Status da Solicitação</h2>
+                <form id="estornar-request-form">
+                    <div class="form-group">
+                        <label for="newRequestStatus">Novo Status</label>
+                        <select id="newRequestStatus" class="form-control">${statusOptions}</select>
+                    </div>
+                    <p id="modal-error" class="error-message"></p>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem;">
+                        <button type="submit" class="btn btn-primary">Salvar Alteração</button>
+                        <button type="button" id="btn-delete-request" class="btn btn-danger">Excluir Solicitação</button>
+                    </div>
+                </form>
+            `;
+
+            document.getElementById('estornar-request-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                handleEstornarSubmit(requestId);
+            });
+            document.getElementById('btn-delete-request').addEventListener('click', () => {
+                handleDeleteRequest(requestId);
+            });
+
+            document.getElementById('modal-container').classList.add('active');
+        } catch (err) {
+            console.error("Erro ao abrir modal de estorno de solicitação:", err);
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleEstornarSubmit = async (requestId) => {
+        App.showLoader();
+        const newStatus = document.getElementById('newRequestStatus').value;
+        try {
+            const updateData = { status: newStatus };
+            // Se reverter para pendente, limpa os dados de processamento
+            if (newStatus === 'PENDENTE') {
+                updateData.processed_at = null;
+                updateData.processed_by = null;
+                updateData.erp_debit_code = null;
+                updateData.rejection_reason = null;
+            }
+
+            const { error } = await supabase.from('dc_requests').update(updateData).eq('id', requestId);
+            if (error) throw error;
+
+            document.getElementById('modal-container').classList.remove('active');
+            await loadRequests();
+        } catch (error) {
+            console.error("Erro ao estornar solicitação:", error);
+            document.getElementById('modal-error').textContent = `Erro: ${error.message}`;
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const handleDeleteRequest = async (requestId) => {
+        if (!confirm("ATENÇÃO!\n\nExcluir esta solicitação também excluirá todos os seus itens de crédito associados. A ação é permanente.\n\nDeseja continuar?")) {
+            return;
+        }
+        App.showLoader();
+        try {
+            // Primeiro, deleta os créditos associados
+            await supabase.from('dc_request_credits').delete().eq('request_id', requestId);
+            // Depois, deleta a solicitação principal
+            const { error } = await supabase.from('dc_requests').delete().eq('id', requestId);
+            if (error) throw error;
+
+            alert("Solicitação excluída com sucesso.");
+            document.getElementById('modal-container').classList.remove('active');
+            await loadRequests();
+        } catch (error) {
+            console.error("Erro ao excluir solicitação:", error);
+            alert(`Falha ao excluir. Erro: ${error.message}`);
+        } finally {
+            App.hideLoader();
+        }
+    };
+
+    const renderLogModal = async (requestId) => {
+        App.showLoader();
+        const modalBody = document.getElementById('modal-body');
+        modalBody.innerHTML = `<h2>Log de Alterações</h2><p>Carregando...</p>`;
+        document.getElementById('modal-container').classList.add('active');
+
+        try {
+            const { data: request, error } = await supabase
+                .from('dc_requests')
+                .select(`
+                    created_at, status, processed_at, rejection_reason, erp_debit_code,
+                    requester:requester_id(full_name),
+                    processor:processed_by(full_name)
+                `)
+                .eq('id', requestId)
+                .single();
+            if (error) throw error;
+
+            let logEvents = [];
+            logEvents.push({
+                date: new Date(request.created_at),
+                user: request.requester.full_name,
+                action: 'Solicitação criada.'
+            });
+
+            if (request.processed_at) {
+                let actionDetail = '';
+                if (request.status === 'APROVADO') {
+                    actionDetail = `Solicitação APROVADA com lançamento ERP <strong>${request.erp_debit_code}</strong>.`;
+                } else if (request.status === 'REJEITADO') {
+                    actionDetail = `Solicitação REJEITADA. Motivo: <em>${request.rejection_reason}</em>.`;
+                }
+                logEvents.push({
+                    date: new Date(request.processed_at),
+                    user: request.processor.full_name,
+                    action: actionDetail
+                });
+            }
+            
+            logEvents.sort((a, b) => a.date - b.date);
+
+            const logHtml = `
+                <ul>
+                    ${logEvents.map(event => `
+                        <li>
+                            <strong>${event.date.toLocaleString('pt-BR')}</strong> por 
+                            <em>${event.user}</em>: ${event.action}
+                        </li>`).join('')}
+                </ul>
+            `;
+            modalBody.innerHTML = `<h2>Log de Alterações</h2>${logHtml}`;
+        } catch (err) {
+            console.error("Erro ao carregar log da solicitação:", err);
+            modalBody.innerHTML = `<p class="error-message">Falha ao carregar o histórico.</p>`;
+        } finally {
+            App.hideLoader();
+        }
     };
 
     return {
