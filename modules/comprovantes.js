@@ -391,7 +391,12 @@ const ComprovantesModule = (() => {
         try {
             const proofId = form.proofId.value;
             const isNew = !proofId;
-
+            
+            const clientCode = form.clientCode.value.trim();
+            if (!clientCode) {
+                throw new Error("O código do cliente é obrigatório.");
+            }
+            
             if (!isNew && urlsToDelete.length > 0) {
                 const pathsToDelete = urlsToDelete.map(url => {
                     try {
@@ -434,7 +439,7 @@ const ComprovantesModule = (() => {
             finalProofUrls.push(...uploadedUrls);
 
             const proofData = {
-                client_code: form.clientCode.value.toUpperCase() || null,
+                client_code: clientCode,
                 client_name_manual: form.clientName.disabled ? null : form.clientName.value,
                 value: parseFloat(form.value.value),
                 payment_type_id: form.payment_type.value,
