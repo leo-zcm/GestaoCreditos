@@ -1,30 +1,30 @@
-// auth.js (VERSÃO FINAL E CORRIGIDA - COM LOGOUT FORÇADO NO REFRESH)
+// auth.js (VERSÃO CORRIGIDA - COM VERIFICAÇÃO EXPLÍCITA DE SESSÃO)
 
 const SUPABASE_URL = "https://sqtdysubmskpvdsdcknu.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNxdGR5c3VibXNrcHZkc2Rja251Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg3MzM5MjQsImV4cCI6MjA3NDMwOTkyNH0.cGprn7VjLDzIrIkmh7KEL8OtxIPbVfmAY6n4gtq6Z8Q";
 
 const supabaseOptions = {
     auth: {
-        storage: sessionStorage,
+        storage: sessionStorage, // Mantém a sessão apenas enquanto a aba estiver aberta
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: true
     },
 };
+
+// Verifica se o script do Supabase carregou corretamente
+if (typeof self.supabase === 'undefined') {
+    alert("Erro crítico: A biblioteca do Supabase não foi carregada. Verifique sua conexão ou o bloqueio de scripts.");
+}
+
 const supabase = self.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, supabaseOptions);
 
-// <<< MUDANÇA CRÍTICA: LOGOUT AUTOMÁTICO AO RECARREGAR A PÁGINA >>>
-// Adicionamos um event listener para o evento 'beforeunload'.
-// Este evento dispara quando o usuário tenta fechar a aba ou recarregar a página.
-// Ao chamar signOut() aqui, garantimos que a sessão seja limpa ANTES da página recarregar.
-// O `localStorage.clear()` é uma garantia extra para limpar qualquer resquício.
-window.addEventListener('beforeunload', (event) => {
-    // Importante: Não podemos usar 'await' aqui. A ação deve ser síncrona.
-    supabase.auth.signOut();
-    // Apenas para garantir, limpamos o sessionStorage explicitamente.
+// <<< CORREÇÃO DO LOGOUT NO REFRESH >>>
+// O signOut() é uma promessa assíncrona e navegadores cancelam requisições no unload.
+// Para forçar logout no refresh, basta limpar o storage. O Supabase não achará a sessão na próxima carga.
+window.addEventListener('beforeunload', () => {
     sessionStorage.clear();
 });
-
 
 async function getUserProfile(userId) {
     try {
@@ -42,7 +42,7 @@ async function getUserProfile(userId) {
     }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     const loginScreen = document.getElementById("login-screen");
     const appScreen = document.getElementById("app-screen");
     const loginForm = document.getElementById("login-form");
@@ -50,6 +50,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const loginError = document.getElementById("login-error");
     const loader = document.getElementById("loader");
 
+    // Funções de UI
     const showLoader = () => loader.classList.add("active");
     const hideLoader = () => loader.classList.remove("active");
     
@@ -58,31 +59,40 @@ document.addEventListener("DOMContentLoaded", () => {
         loginScreen.classList.remove("active");
         hideLoader();
     };
+    
     const showLoginScreen = () => {
         loginScreen.classList.add("active");
         appScreen.classList.remove("active");
         hideLoader();
     };
 
+    // Inputs
     const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
 
-    usernameInput.addEventListener("input", (e) => {
-        e.target.value = e.target.value.toUpperCase();
-    });
-    usernameInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            passwordInput.focus();
-        }
-    });
-    passwordInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            document.getElementById("login-button").click();
-        }
-    });
+    // Eventos de Input
+    if (usernameInput) {
+        usernameInput.addEventListener("input", (e) => {
+            e.target.value = e.target.value.toUpperCase();
+        });
+        usernameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                passwordInput.focus();
+            }
+        });
+    }
 
+    if (passwordInput) {
+        passwordInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                document.getElementById("login-button").click();
+            }
+        });
+    }
+
+    // Lógica de Login
     const handleLogin = async (event) => {
         if (event) event.preventDefault();
         showLoader();
@@ -93,7 +103,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!username || !password) {
             loginError.textContent = "Usuário e senha são obrigatórios.";
-            showLoginScreen(); 
+            hideLoader(); // Garante que o loader some se der erro de validação
             return;
         }
 
@@ -111,56 +121,85 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
 
             if (signInError) throw new Error("Usuário ou senha inválidos.");
-            if (!signInData.user)
-                throw new Error("Falha na autenticação. Tente novamente.");
+            if (!signInData.user) throw new Error("Falha na autenticação.");
 
-            const userProfile = await getUserProfile(signInData.user.id);
-            if (!userProfile) throw new Error("Perfil de usuário não encontrado.");
+            // O redirecionamento acontecerá via verificação de sessão ou listener
+            // Mas podemos chamar initSession aqui para garantir resposta rápida
+            await initSession(signInData.user);
 
-            App.init(userProfile);
-            showAppScreen();
         } catch (error) {
-            console.error("Erro no processo de login:", error.message);
+            console.error("Erro no login:", error.message);
             loginError.textContent = error.message;
-            showLoginScreen();
+            // Não chame showLoginScreen() aqui pois ele reseta a tela, apenas esconda o loader
+            hideLoader();
         } 
     };
 
-    loginForm.addEventListener("submit", handleLogin);
+    if (loginForm) {
+        loginForm.addEventListener("submit", handleLogin);
+    }
 
-    logoutButton.addEventListener("click", async () => {
-        showLoader();
-        await supabase.auth.signOut();
-    });
+    if (logoutButton) {
+        logoutButton.addEventListener("click", async () => {
+            showLoader();
+            await supabase.auth.signOut();
+            App.destroy();
+            showLoginScreen();
+        });
+    }
 
+    // Função centralizada para iniciar a sessão
+    const initSession = async (user) => {
+        try {
+            if (!App.isInitialized()) {
+                const userProfile = await getUserProfile(user.id);
+                if (userProfile) {
+                    App.init(userProfile);
+                    showAppScreen();
+                } else {
+                    throw new Error("Perfil não encontrado.");
+                }
+            } else {
+                showAppScreen();
+            }
+        } catch (error) {
+            console.error("Erro ao iniciar sessão:", error);
+            await supabase.auth.signOut();
+            showLoginScreen();
+        }
+    };
+
+    // <<< AQUI ESTÁ A CORREÇÃO PRINCIPAL >>>
+    // 1. Verificamos a sessão MANUALMENTE ao carregar a página
+    // Isso previne que o evento onAuthStateChange seja "perdido" se disparar muito rápido.
+    const checkCurrentSession = async () => {
+        try {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            
+            if (error || !session) {
+                showLoginScreen();
+            } else {
+                await initSession(session.user);
+            }
+        } catch (err) {
+            console.error("Erro fatal na verificação inicial:", err);
+            showLoginScreen();
+        }
+    };
+
+    // Executa a verificação inicial
+    await checkCurrentSession();
+
+    // 2. Mantemos o listener para eventos futuros (ex: logout em outra aba, expiração)
     supabase.auth.onAuthStateChange(async (event, session) => {
+        // Ignora INITIAL_SESSION pois já tratamos no checkCurrentSession
+        if (event === 'INITIAL_SESSION') return; 
+
         if (event === "SIGNED_OUT") {
             App.destroy();
             showLoginScreen();
-            return;
-        }
-
-        if (session && session.user) {
-            try {
-                if (!App.isInitialized()) {
-                    const userProfile = await getUserProfile(session.user.id);
-                    if (userProfile) {
-                        App.init(userProfile);
-                        showAppScreen();
-                    } else {
-                        console.error("Sessão válida, mas perfil não encontrado. Forçando logout.");
-                        await supabase.auth.signOut();
-                    }
-                } else {
-                    showAppScreen();
-                }
-            } catch (error) {
-                console.error("Erro crítico ao restaurar sessão:", error);
-                await supabase.auth.signOut();
-            }
-        } else {
-            App.destroy();
-            showLoginScreen();
+        } else if (event === "SIGNED_IN" && session) {
+            await initSession(session.user);
         }
     });
 });
